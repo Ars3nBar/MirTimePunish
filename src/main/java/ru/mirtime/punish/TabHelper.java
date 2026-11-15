@@ -8,6 +8,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class TabHelper implements TabCompleter {
@@ -23,7 +24,7 @@ public class TabHelper implements TabCompleter {
         String name = cmd.getName().toLowerCase();
         List<String> list = new ArrayList<>();
 
-        // 1-й аргумент: ники игроков
+        // 1-й аргумент: ники игроков или reload
         if (args.length == 1) {
             if (name.equals("punish")) list.add("reload");
             for (Player p : Bukkit.getOnlinePlayers()) {
@@ -32,7 +33,7 @@ public class TabHelper implements TabCompleter {
             return filter(list, args);
         }
 
-        // Для /ban и /mute: 2-й аргумент — только статьи нужного типа (BAN или MUTE)
+        // Для /ban и /mute: сначала статья нужного типа, затем её точный срок
         if (name.equals("ban") || name.equals("mute")) {
             String targetType = name.toUpperCase();
             ConfigurationSection sec = plugin.getConfig().getConfigurationSection("templates");
@@ -48,14 +49,15 @@ public class TabHelper implements TabCompleter {
                 return filter(list, args);
             }
 
-            // После выбора статьи (3-й+ аргумент) автоматически подсказываем её срок из config.yml
-            String typedReason = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length - 1));
+            // Проверяем, совпадает ли введённый текст со статьёй, и выдаём её срок
+            String typedReason = String.join(" ", Arrays.copyOfRange(args, 1, args.length - 1));
             for (String key : sec.getKeys(false)) {
-                String reason = sec.getString(key + ".reason", "");
-                if (reason.equalsIgnoreCase(typedReason)) {
-                    String dur = sec.getString(key + ".duration", "1d");
-                    list.add(dur);
-                    return filter(list, args);
+                if (sec.getString(key + ".type", "BAN").equalsIgnoreCase(targetType)) {
+                    String reason = sec.getString(key + ".reason", "");
+                    if (reason.equalsIgnoreCase(typedReason)) {
+                        list.add(sec.getString(key + ".duration", "1d"));
+                        return filter(list, args);
+                    }
                 }
             }
         }
