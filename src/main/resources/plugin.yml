@@ -1,1 +1,52 @@
-
+name: MirTimePunish
+version: '1.0.0'
+main: ru.mirtime.punish.MirTimePunish
+api-version: '1.21'
+softdepend:
+  - LuckPerms
+  - PlaceholderAPI
+commands:
+  punish:
+    description: Меню наказаний по правилам MirTime
+    aliases: [p, наказать]
+    permission: mirtime.punish.menu
+  check:
+    description: Вызвать игрока на проверку читов
+    aliases: [проверка]
+    permission: mirtime.punish.check
+  report:
+    description: Пожаловаться на игрока
+    aliases: [репорт, жалоба]
+  reports:
+    description: Панель жалоб, слежки и проверок
+    aliases: [mod, жалобы]
+    permission: mirtime.punish.reports
+  spec:
+    description: Скрытая слежка за игроком
+    aliases: [слежка]
+    permission: mirtime.punish.spec
+  ban:
+    description: Забанить игрока
+    permission: mirtime.punish.ban
+  mute:
+    description: Замутить игрока
+    permission: mirtime.punish.mute
+  unban:
+    description: Разбанить игрока
+    permission: mirtime.punish.unban
+  unmute:
+    description: Размутить игрока
+    permission: mirtime.punish.unmute
+permissions:
+  mirtime.punish.*:
+    description: Полный доступ ко всем функциям модерации
+    children:
+      mirtime.punish.menu: true
+      mirtime.punish.check: true
+      mirtime.punish.reports: true
+      mirtime.punish.spec: true
+      mirtime.punish.ban: true
+      mirtime.punish.mute: true
+      mirtime.punish.unban: true
+      mirtime.punish.unmute: true
+      mirtime.punish.reload: true
