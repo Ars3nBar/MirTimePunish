@@ -47,13 +47,18 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         db = YamlConfiguration.loadConfiguration(dbFile);
         modPanel = new ModPanel(this);
 
+        TabHelper tabHelper = new TabHelper(this);
         for (String cmd : List.of("punish", "check", "report", "reports", "spec", "ban", "mute", "unban", "unmute")) {
-            if (getCommand(cmd) != null) getCommand(cmd).setExecutor(this);
+            if (getCommand(cmd) != null) {
+                getCommand(cmd).setExecutor(this);
+                getCommand(cmd).setTabCompleter(tabHelper);
+            }
         }
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(modPanel, this);
         getLogger().info("MirTimePunish загружен!");
     }
+
 
     private void saveDb() {
         try { db.save(dbFile); } catch (IOException ignored) {}
