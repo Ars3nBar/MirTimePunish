@@ -36,6 +36,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     private ModPanel modPanel;
     private final Set<UUID> frozenPlayers = new HashSet<>();
     private final Map<UUID, String> punishTargets = new HashMap<>();
+    private final Map<UUID, Integer> punishPages = new HashMap<>();
     private final Map<Integer, String> slotToTemplate = new HashMap<>();
 
     @Override
@@ -104,7 +105,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             modPanel.toggleSpec(p, target);
             return true;
         }
-
         if (name.equals("punish")) {
             if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
                 if (!sender.hasPermission("mirtime.punish.reload")) {
@@ -121,6 +121,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 return true;
             }
             punishTargets.put(p.getUniqueId(), args[0]);
+            punishPages.put(p.getUniqueId(), 0);
             openPunishMenu(p, args[0]);
             return true;
         }
@@ -195,6 +196,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         }
         return true;
     }
+
     private void applyPunishment(CommandSender sender, String targetName, boolean isBan, long durationMs, String reason) {
         Player onlineTarget = Bukkit.getPlayerExact(targetName);
         if (onlineTarget != null && onlineTarget.hasPermission("mirtime.punish.bypass")) {
@@ -230,7 +232,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             }
         }
     }
-
     private String buildBanScreen(String reason, String admin, long until) {
         String dateStr = (until == -1) ? "Никогда (Перманентно)" : new SimpleDateFormat("dd.MM.yyyy HH:mm").format(new Date(until));
         String site = getConfig().getString("site-link", "don.mir-time.ru");
@@ -295,7 +296,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     }
 
     private void openPunishMenu(Player admin, String target) {
-        Inventory inv = Bukkit.createInventory(null, 54, color("&#0055ff&l⚡ Наказание: &#00FF66" + target));
+        int page = punishPages.getOrDefault(admin.getUniqueId(), 0);
+        Inventory inv = Bukkit.createInventory(null, 54, color("&#0055ff&l⚡ Наказание: &#00FF66" + target + " &8[Стр. " + (page + 1) + "]"));
         ItemStack blue = item(Material.BLUE_STAINED_GLASS_PANE, "&#0055ff▪", null);
         ItemStack cyan = item(Material.LIGHT_BLUE_STAINED_GLASS_PANE, "&#00E5FF▫", null);
         for (int s : new int[]{0,1,7,8,9,17,18,26,27,35,36,44,45,46,52,53}) inv.setItem(s, blue);
@@ -304,15 +306,25 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         slotToTemplate.clear();
         ConfigurationSection sec = getConfig().getConfigurationSection("templates");
         if (sec != null) {
-            for (String key : sec.getKeys(false)) {
-                int slot = sec.getInt(key + ".slot", -1);
-                if (slot < 0 || slot >= 54) continue;
+            List<String> keys = new ArrayList<>(sec.getKeys(false));
+            int[] grid = {10,11,12,13,14,15,16, 19,20,21,22,23,24,25, 28,29,30,31,32,33,34, 37,38,39,40,41,42,43};
+            int perPage = grid.length;
+            int start = page * perPage;
+
+            for (int i = 0; i < perPage && (start + i) < keys.size(); i++) {
+                String key = keys.get(start + i);
+                int slot = grid[i];
                 Material mat = Material.matchMaterial(sec.getString(key + ".material", "PAPER"));
                 if (mat == null) mat = Material.PAPER;
-                String name = sec.getString(key + ".name", key);
-                List<String> lore = sec.getStringList(key + ".lore");
-                inv.setItem(slot, item(mat, name, lore));
+                inv.setItem(slot, item(mat, sec.getString(key + ".name", key), sec.getStringList(key + ".lore")));
                 slotToTemplate.put(slot, key);
+            }
+
+            if (page > 0) {
+                inv.setItem(48, item(Material.ARROW, "&#00E5FF&l[◀ Предыдущая страница]", null));
+            }
+            if (start + perPage < keys.size()) {
+                inv.setItem(50, item(Material.ARROW, "&#00FF66&l[Следующая страница ▶]", null));
             }
         }
         admin.openInventory(inv);
@@ -325,14 +337,30 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         e.setCancelled(true);
 
         String target = punishTargets.get(p.getUniqueId());
-        String key = slotToTemplate.get(e.getRawSlot());
-        if (target == null || key == null) return;
+        if (target == null) return;
+
+        int slot = e.getRawSlot();
+        int page = punishPages.getOrDefault(p.getUniqueId(), 0);
+        if (slot == 48 && page > 0) {
+            punishPages.put(p.getUniqueId(), page - 1);
+            openPunishMenu(p, target);
+            return;
+        }
+        if (slot == 50 && e.getCurrentItem() != null && e.getCurrentItem().getType() == Material.ARROW) {
+            punishPages.put(p.getUniqueId(), page + 1);
+            openPunishMenu(p, target);
+            return;
+        }
+
+        String key = slotToTemplate.get(slot);
+        if (key == null) return;
 
         String path = "templates." + key;
         boolean isBan = getConfig().getString(path + ".type", "BAN").equalsIgnoreCase("BAN");
         long duration = parseDuration(getConfig().getString(path + ".duration", "1d"));
         String reason = getConfig().getString(path + ".reason", "Нарушение правил");
 
+        punishPages.remove(p.getUniqueId());
         applyPunishment(p, target, isBan, duration, reason);
         p.closeInventory();
     }
