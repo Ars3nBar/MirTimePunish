@@ -1,5 +1,6 @@
 package ru.mirtime.punish;
 
+import io.papermc.paper.event.player.AsyncChatEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Material;
@@ -261,21 +262,37 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         ));
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST)
-    public void onChat(AsyncPlayerChatEvent e) {
-        Player p = e.getPlayer();
-        if (frozenPlayers.contains(p.getUniqueId())) return;
+    private boolean checkMuted(Player p) {
+        if (frozenPlayers.contains(p.getUniqueId())) return false;
         String key = "mutes." + p.getName().toLowerCase();
-        if (!db.contains(key)) return;
+        if (!db.contains(key)) return false;
         long until = db.getLong(key + ".until");
         if (until != -1 && System.currentTimeMillis() > until) {
             db.set(key, null);
             saveDb();
-            return;
+            return false;
         }
-        e.setCancelled(true);
         String rem = (until == -1) ? "Навсегда" : formatTime(until - System.currentTimeMillis());
         p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ вас мут! &fСтатья: &#00E5FF" + db.getString(key + ".reason") + " &8(&fОсталось: &#00FF66" + rem + "&8)"));
+        return true;
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onPaperChat(AsyncChatEvent e) {
+        if (checkMuted(e.getPlayer())) e.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onLegacyChat(AsyncPlayerChatEvent e) {
+        if (checkMuted(e.getPlayer())) e.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    public void onCommandPreprocess(PlayerCommandPreprocessEvent e) {
+        String msg = e.getMessage().toLowerCase();
+        if (msg.startsWith("/msg ") || msg.startsWith("/tell ") || msg.startsWith("/w ") || msg.startsWith("/m ") || msg.startsWith("/r ")) {
+            if (checkMuted(e.getPlayer())) e.setCancelled(true);
+        }
     }
 
     @EventHandler
@@ -320,12 +337,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 slotToTemplate.put(slot, key);
             }
 
-            if (page > 0) {
-                inv.setItem(48, item(Material.ARROW, "&#00E5FF&l[◀ Предыдущая страница]", null));
-            }
-            if (start + perPage < keys.size()) {
-                inv.setItem(50, item(Material.ARROW, "&#00FF66&l[Следующая страница ▶]", null));
-            }
+            if (page > 0) inv.setItem(48, item(Material.ARROW, "&#00E5FF&l[◀ Предыдущая страница]", null));
+            if (start + perPage < keys.size()) inv.setItem(50, item(Material.ARROW, "&#00FF66&l[Следующая страница ▶]", null));
         }
         admin.openInventory(inv);
     }
