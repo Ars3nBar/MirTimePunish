@@ -16,6 +16,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -56,9 +57,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         }
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(modPanel, this);
-        getLogger().info("MirTimePunish загружен!");
+        getLogger().info("MirTimePunish успешно запущен!");
     }
-
 
     private void saveDb() {
         try { db.save(dbFile); } catch (IOException ignored) {}
@@ -158,12 +158,22 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         }
 
         if (name.equals("ban") || name.equals("mute")) {
-            if (args.length < 3) {
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/" + name + " <ник> <время: 30m/5h/14d/perm> <причина>"));
+            if (args.length < 2) {
+                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/" + name + " <ник> <статья> [срок]"));
                 return true;
             }
-            long duration = parseDuration(args[1]);
-            String reason = String.join(" ", Arrays.copyOfRange(args, 2, args.length));
+            String lastArg = args[args.length - 1];
+            boolean hasDuration = lastArg.equalsIgnoreCase("perm") || lastArg.matches("(?i)^\\d+[mhd]$");
+
+            long duration;
+            String reason;
+            if (hasDuration && args.length >= 3) {
+                duration = parseDuration(lastArg);
+                reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length - 1));
+            } else {
+                reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+                duration = findDurationByReason(reason);
+            }
             applyPunishment(sender, args[0], name.equals("ban"), duration, reason);
             return true;
         }
@@ -202,16 +212,22 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         saveDb();
 
         String timeText = (durationMs == -1) ? "Навсегда" : formatTime(durationMs);
+        String badge = isBan ? "&c&l[БАН]" : "&#00E5FF&l[МУТ]";
         String actionText = isBan ? "&cзабанил" : "&#00E5FFзамутил";
 
         Bukkit.broadcastMessage(color("&#0055ff&l&m                                                "));
-        Bukkit.broadcastMessage(color(" &#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» " + adminDisplay + " " + actionText + " &fигрока &#00FF66" + targetName));
-        Bukkit.broadcastMessage(color(" &#0055ff● &fПричина: &#00E5FF" + reason + " &8(&fСрок: &#00FF66" + timeText + "&8)"));
+        Bukkit.broadcastMessage(color(" " + badge + " &#0055ff&lMIR-TIME &8» " + adminDisplay + " " + actionText + " &fигрока &#00FF66" + targetName));
+        Bukkit.broadcastMessage(color(" &#0055ff● &fСтатья: &#00E5FF" + reason));
+        Bukkit.broadcastMessage(color(" &#0055ff● &fСрок наказания: &#00FF66" + timeText));
         Bukkit.broadcastMessage(color("&#0055ff&l&m                                                "));
 
         if (onlineTarget != null) {
             frozenPlayers.remove(onlineTarget.getUniqueId());
-            if (isBan) onlineTarget.kickPlayer(buildBanScreen(reason, sender.getName(), until));
+            if (isBan) {
+                onlineTarget.kickPlayer(buildBanScreen(reason, sender.getName(), until));
+            } else {
+                onlineTarget.playSound(onlineTarget.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
+            }
         }
     }
 
@@ -219,10 +235,10 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         String dateStr = (until == -1) ? "Никогда (Перманентно)" : new SimpleDateFormat("dd.MM.yyyy HH:mm").format(new Date(until));
         String site = getConfig().getString("site-link", "don.mir-time.ru");
         return color("&#0055ff&l⚡ &#00E5FF&lСЕРВЕР MIR-TIME &#0055ff&l⚡\n\n" +
-                "&cВаш аккаунт заблокирован!\n\n" +
-                "&fПричина: &#00E5FF" + reason + "\n" +
+                "&c&lВАШ АККАУНТ ЗАБЛОКИРОВАН!\n\n" +
+                "&fСтатья: &#00E5FF" + reason + "\n" +
                 "&fВыдал: &#00FF66" + admin + "\n" +
-                "&fРазбан: &#00FF66" + dateStr + "\n\n" +
+                "&fДата разбана: &#00FF66" + dateStr + "\n\n" +
                 "&7Купить разбан или подать апелляцию:\n" +
                 "&#00E5FF&n" + site);
     }
@@ -258,7 +274,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         }
         e.setCancelled(true);
         String rem = (until == -1) ? "Навсегда" : formatTime(until - System.currentTimeMillis());
-        p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ вас мут! &fПричина: &#00E5FF" + db.getString(key + ".reason") + " &8(&fОсталось: &#00FF66" + rem + "&8)"));
+        p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ вас мут! &fСтатья: &#00E5FF" + db.getString(key + ".reason") + " &8(&fОсталось: &#00FF66" + rem + "&8)"));
     }
 
     @EventHandler
@@ -281,7 +297,9 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     private void openPunishMenu(Player admin, String target) {
         Inventory inv = Bukkit.createInventory(null, 54, color("&#0055ff&l⚡ Наказание: &#00FF66" + target));
         ItemStack blue = item(Material.BLUE_STAINED_GLASS_PANE, "&#0055ff▪", null);
-        for (int s : new int[]{0,1,2,3,4,5,6,7,8,9,17,18,26,27,35,36,44,45,46,47,48,49,50,51,52,53}) inv.setItem(s, blue);
+        ItemStack cyan = item(Material.LIGHT_BLUE_STAINED_GLASS_PANE, "&#00E5FF▫", null);
+        for (int s : new int[]{0,1,7,8,9,17,18,26,27,35,36,44,45,46,52,53}) inv.setItem(s, blue);
+        for (int s : new int[]{2,3,4,5,6,47,48,49,50,51}) inv.setItem(s, cyan);
 
         slotToTemplate.clear();
         ConfigurationSection sec = getConfig().getConfigurationSection("templates");
@@ -317,6 +335,18 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
 
         applyPunishment(p, target, isBan, duration, reason);
         p.closeInventory();
+    }
+
+    private long findDurationByReason(String reason) {
+        ConfigurationSection sec = getConfig().getConfigurationSection("templates");
+        if (sec != null) {
+            for (String key : sec.getKeys(false)) {
+                if (sec.getString(key + ".reason", "").equalsIgnoreCase(reason)) {
+                    return parseDuration(sec.getString(key + ".duration", "1d"));
+                }
+            }
+        }
+        return 3_600_000L;
     }
 
     private long parseDuration(String input) {
@@ -355,6 +385,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 for (String s : lore) list.add(color(s));
                 meta.setLore(list);
             }
+            meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ENCHANTS);
             is.setItemMeta(meta);
         }
         return is;
