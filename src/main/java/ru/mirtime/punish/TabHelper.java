@@ -23,7 +23,7 @@ public class TabHelper implements TabCompleter {
         String name = cmd.getName().toLowerCase();
         List<String> list = new ArrayList<>();
 
-        // 1-й аргумент: ники онлайн-игроков (для /punish добавляем ещё reload)
+        // 1-й аргумент: ники игроков
         if (args.length == 1) {
             if (name.equals("punish")) list.add("reload");
             for (Player p : Bukkit.getOnlinePlayers()) {
@@ -32,22 +32,32 @@ public class TabHelper implements TabCompleter {
             return filter(list, args);
         }
 
-        // 2-й аргумент для /ban и /mute: подсказки времени
-        if (args.length == 2 && (name.equals("ban") || name.equals("mute"))) {
-            list.addAll(List.of("30m", "1h", "2h", "5h", "1d", "3d", "7d", "14d", "30d", "perm"));
-            return filter(list, args);
-        }
-
-        // 3-й аргумент для /ban и /mute: причины и статьи из config.yml
-        if (args.length == 3 && (name.equals("ban") || name.equals("mute"))) {
+        // Для /ban и /mute: 2-й аргумент — только статьи нужного типа (BAN или MUTE)
+        if (name.equals("ban") || name.equals("mute")) {
+            String targetType = name.toUpperCase();
             ConfigurationSection sec = plugin.getConfig().getConfigurationSection("templates");
-            if (sec != null) {
+            if (sec == null) return list;
+
+            if (args.length == 2) {
                 for (String key : sec.getKeys(false)) {
-                    String reason = sec.getString(key + ".reason");
-                    if (reason != null) list.add(reason);
+                    if (sec.getString(key + ".type", "BAN").equalsIgnoreCase(targetType)) {
+                        String reason = sec.getString(key + ".reason");
+                        if (reason != null) list.add(reason);
+                    }
+                }
+                return filter(list, args);
+            }
+
+            // После выбора статьи (3-й+ аргумент) автоматически подсказываем её срок из config.yml
+            String typedReason = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length - 1));
+            for (String key : sec.getKeys(false)) {
+                String reason = sec.getString(key + ".reason", "");
+                if (reason.equalsIgnoreCase(typedReason)) {
+                    String dur = sec.getString(key + ".duration", "1d");
+                    list.add(dur);
+                    return filter(list, args);
                 }
             }
-            return filter(list, args);
         }
 
         return list;
