@@ -27,7 +27,6 @@ import org.bukkit.inventory.meta.SkullMeta;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
-import static ru.mirtime.punish.MirTimePunish.color;
 
 public class ModPanel implements Listener {
 
@@ -232,4 +231,19 @@ public class ModPanel implements Listener {
         }
         return is;
     }
+
+    private static String color(String text) {
+        if (text == null) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("&#([A-Fa-f0-9]{6})").matcher(text);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String hex = matcher.group(1);
+            StringBuilder rep = new StringBuilder("§x");
+            for (char c : hex.toCharArray()) rep.append('§').append(c);
+            matcher.appendReplacement(buffer, rep.toString());
+        }
+        matcher.appendTail(buffer);
+        return ChatColor.translateAlternateColorCodes('&', buffer.toString());
+    }
 }
+
