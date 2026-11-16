@@ -26,7 +26,8 @@ import org.bukkit.inventory.meta.SkullMeta;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
-
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ModPanel implements Listener {
 
@@ -234,7 +235,8 @@ public class ModPanel implements Listener {
 
     private static String color(String text) {
         if (text == null) return "";
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("&#([A-Fa-f0-9]{6})").matcher(text);
+        Pattern pattern = Pattern.compile("&#([A-Fa-f0-9]{6})");
+        Matcher matcher = pattern.matcher(text);
         StringBuffer buffer = new StringBuffer();
         while (matcher.find()) {
             String hex = matcher.group(1);
@@ -246,4 +248,3 @@ public class ModPanel implements Listener {
         return ChatColor.translateAlternateColorCodes('&', buffer.toString());
     }
 }
-
