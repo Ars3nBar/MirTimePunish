@@ -81,6 +81,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
 
         getLogger().info("MirTimePunish v1.2.0 успешно запущен!");
     }
+
     public ModPanel getModPanel() {
         return modPanel;
     }
@@ -118,7 +119,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         }
         return "&4&l[Консоль] ";
     }
-
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String name = command.getName().toLowerCase();
@@ -169,6 +169,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             openPunishMenu(p, args);
             return true;
         }
+
         if (name.equals("check")) {
             if (!(sender instanceof Player p)) return true;
             if (args.length < 1) {
@@ -342,6 +343,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 until
         ));
     }
+
     private boolean checkMuted(Player p) {
         String key = "mutes." + p.getName().toLowerCase();
         if (!db.contains(key)) return false;
@@ -380,7 +382,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             }
         }
     }
-
     public void openPunishMenu(Player mod, String targetName) {
         int page = punishPages.getOrDefault(mod.getUniqueId(), 0);
         Inventory inv = Bukkit.createInventory(null, 54, color("&#0055ff&l⚡ Наказание: &#00FF66" + targetName + " &8[Стр. " + (page + 1) + "]"));
