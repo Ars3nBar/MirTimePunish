@@ -15,7 +15,7 @@ commands:
     aliases: [проверка]
     permission: mirtime.punish.check
   checktime:
-    description: Добавить время проверки (максимум 25 минут)
+    description: Добавить время проверки (максимум 25 минут суммарно)
     aliases: [ct, времяпроверки]
     permission: mirtime.punish.check
   report:
@@ -54,3 +54,4 @@ permissions:
       mirtime.punish.unban: true
       mirtime.punish.unmute: true
       mirtime.punish.reload: true
+      mirtime.punish.filter.bypass: true
