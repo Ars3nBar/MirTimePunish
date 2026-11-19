@@ -1,18 +1,7 @@
-/*
- *    __  __ _        _____ _                
- *   |  \/  (_)_ __  |_   _(_)_ __ ___   ___ 
- *   | |\/| | | '__|   | | | | '_ ` _ \ / _ \
- *   | |  | | | |      | | | | | | | | |  __/
- *   |_|  |_|_|_|      |_| |_|_| |_| |_|\___|
- *                                           
- *   Project: Mir Time | Author: Ars3nBar
- */
 package ru.mirtime.punish;
 
 import io.papermc.paper.event.player.AsyncChatEvent;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.Sound;
 import org.bukkit.command.Command;
@@ -25,7 +14,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.player.*;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
@@ -42,14 +32,15 @@ import java.util.regex.Pattern;
 
 public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listener {
 
-    private File dbFile;
-    private YamlConfiguration db;
-    private ModPanel modPanel;
-    private final Set<UUID> frozenPlayers = new HashSet<>();
     private final Map<UUID, String> punishTargets = new HashMap<>();
     private final Map<UUID, Integer> punishPages = new HashMap<>();
     private final Map<Integer, String> slotToTemplate = new HashMap<>();
-    private final Map<UUID, Integer> filterWarnings = new HashMap<>();
+    private File dbFile;
+    private YamlConfiguration db;
+    private ModPanel modPanel;
+    private CheckArenaManager checkArena;
+
+    public CheckArenaManager getCheckArena() { return checkArena; }
 
     @Override
     public void onEnable() {
@@ -60,23 +51,19 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         }
         db = YamlConfiguration.loadConfiguration(dbFile);
         modPanel = new ModPanel(this);
-
+        checkArena = new CheckArenaManager(this);
         TabHelper tabHelper = new TabHelper(this);
-        for (String cmd : List.of("punish", "check", "report", "reports", "spec", "ban", "mute", "unban", "unmute", "acreport")) {
+
+        for (String cmd : List.of("punish", "check", "report", "reports", "spec", "ban", "mute", "unban", "unmute")) {
             if (getCommand(cmd) != null) {
                 getCommand(cmd).setExecutor(this);
-                if (!cmd.equals("acreport")) getCommand(cmd).setTabCompleter(tabHelper);
+                getCommand(cmd).setTabCompleter(tabHelper);
             }
         }
         Bukkit.getPluginManager().registerEvents(this, this);
         Bukkit.getPluginManager().registerEvents(modPanel, this);
-
-        Bukkit.getConsoleSender().sendMessage(color("&#0055ff   __  __ _        _____ _                "));
-        Bukkit.getConsoleSender().sendMessage(color("&#0055ff  |  \\/  (_)_ __  |_   _(_)_ __ ___   ___ "));
-        Bukkit.getConsoleSender().sendMessage(color("&#00E5FF  | |\\/| | | '__|   | | | | '_ ` _ \\ / _ \\"));
-        Bukkit.getConsoleSender().sendMessage(color("&#00E5FF  | |  | | | |      | | | | | | | | |  __/"));
-        Bukkit.getConsoleSender().sendMessage(color("&#00FF66  |_|  |_|_|_|      |_| |_|_| |_| |_|\\___|"));
-        Bukkit.getConsoleSender().sendMessage(color("&#00E5FF  MirTimePunish v1.1.0 успешно запущен!"));
+        Bukkit.getPluginManager().registerEvents(checkArena, this);
+        getLogger().info("MirTimePunish успешно запущен!");
     }
 
     private void saveDb() {
@@ -88,329 +75,220 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             try {
                 if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
                     Class<?> papi = Class.forName("me.clip.placeholderapi.PlaceholderAPI");
-                    Method setPlaceholders = papi.getMethod("setPlaceholders", Player.class, String.class);
-                    String prefix = (String) setPlaceholders.invoke(null, p, "%luckperms_prefix%");
-                    if (prefix != null && !prefix.equals("%luckperms_prefix%")) return prefix;
+                    Method m = papi.getMethod("setPlaceholders", Player.class, String.class);
+                    String res = (String) m.invoke(null, p, "%luckperms_prefix%");
+                    if (res != null && !res.equals("%luckperms_prefix%")) return res;
                 }
             } catch (Exception ignored) {}
         }
         return "&#00E5FF[Персонал] ";
     }
-
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
-        String name = cmd.getName().toLowerCase();
-        String firstArg = (args.length > 0) ? List.of(args).get(0) : "";
+        String cName = cmd.getName().toLowerCase();
 
-        if (name.equals("acreport")) {
-            if (args.length < 2) return true;
-            String detect = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-            modPanel.createAcReport(firstArg, detect);
-            return true;
-        }
-
-        if (name.equals("report")) {
+        if (cName.equals("report")) {
             if (!(sender instanceof Player p)) return true;
             if (args.length < 2) {
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/report <ник> <причина>"));
                 return true;
             }
             String reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-            modPanel.createReport(p, firstArg, reason);
+            modPanel.createReport(p, List.of(args).get(0), reason);
             return true;
         }
 
-        if (name.equals("reports")) {
+        if (cName.equals("reports")) {
             if (sender instanceof Player p) modPanel.openReportsMenu(p);
             return true;
         }
 
-        if (name.equals("spec")) {
-            if (!(sender instanceof Player p)) return true;
-            Player target = (args.length > 0) ? Bukkit.getPlayer(firstArg) : null;
-            modPanel.toggleSpec(p, target);
+        if (cName.equals("spec")) {
+            if (sender instanceof Player p) {
+                Player t = args.length > 0 ? Bukkit.getPlayer(List.of(args).get(0)) : null;
+                modPanel.toggleSpec(p, t);
+            }
             return true;
         }
 
-        if (name.equals("punish")) {
-            if (args.length > 0 && firstArg.equalsIgnoreCase("reload")) {
+        if (cName.equals("punish")) {
+            if (args.length > 0 && List.of(args).get(0).equalsIgnoreCase("reload")) {
                 if (!sender.hasPermission("mirtime.punish.reload")) {
                     sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ вас нет права mirtime.punish.reload!"));
                     return true;
                 }
                 reloadConfig();
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Конфиг config.yml успешно перезагружен!"));
+                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Конфиг шаблонов config.yml успешно перезагружен!"));
                 return true;
             }
             if (!(sender instanceof Player p)) return true;
-            if (args.length == 0) {
+            if (args.length < 1) {
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/punish <ник> &7или &#00E5FF/punish reload"));
                 return true;
             }
-            punishTargets.put(p.getUniqueId(), firstArg);
+            punishTargets.put(p.getUniqueId(), List.of(args).get(0));
             punishPages.put(p.getUniqueId(), 0);
-            openPunishMenu(p, firstArg);
+            openPunishMenu(p, List.of(args).get(0));
             return true;
         }
-        if (name.equals("check")) {
-            if (args.length == 0) {
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/check <ник>"));
+
+        if (cName.equals("check")) {
+            if (!(sender instanceof Player p)) return true;
+            if (args.length < 1) {
+                p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/check <ник>"));
                 return true;
             }
-            Player target = Bukkit.getPlayer(firstArg);
+            Player target = Bukkit.getPlayer(List.of(args).get(0));
             if (target == null) {
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cИгрок не в сети."));
+                p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cИгрок не в сети."));
                 return true;
             }
             if (target.hasPermission("mirtime.punish.bypass")) {
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cВы не можете вызвать этого сотрудника на проверку!"));
+                p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cВы не можете вызвать этого сотрудника на проверку!"));
                 return true;
             }
-            if (frozenPlayers.contains(target.getUniqueId())) {
-                frozenPlayers.remove(target.getUniqueId());
-                target.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Проверка успешно пройдена! Вы разморожены."));
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fВы отпустили игрока &#00FF66" + target.getName() + "&f."));
-            } else {
-                frozenPlayers.add(target.getUniqueId());
-                target.sendTitle(color("&c&lПРОВЕРКА НА ЧИТЫ!"), color("&fСкиньте Discord/Telegram в чат за &#00E5FF5 минут"), 10, 140, 20);
-                target.playSound(target.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 1f, 1f);
-                target.sendMessage(color("&#0055ff&l&m                                                "));
-                target.sendMessage(color(" &c&l⚠ ВЫ ВЫЗВАНЫ НА ПРОВЕРКУ ЧИТОВ (Пункт 2.1 - 2.3)"));
-                target.sendMessage(color(" &fНапишите свой &#00E5FFDiscord &fили &#00E5FFTelegram &fв чат."));
-                target.sendMessage(color(" &cВыход с сервера = автоматический БАН на 14 дней!"));
-                target.sendMessage(color("&#0055ff&l&m                                                "));
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + target.getName() + " &fзаморожен на проверку."));
-            }
+            checkArena.toggleCheck(p, target);
             return true;
         }
 
-        if (name.equals("ban") || name.equals("mute")) {
+        if (cName.equals("ban") || cName.equals("mute")) {
             if (args.length < 2) {
-                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/" + name + " <ник> <статья> [срок]"));
+                sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/" + cName + " <ник> <статья> [срок]"));
                 return true;
             }
+            String target = List.of(args).get(0);
             String lastArg = List.of(args).get(args.length - 1);
-            boolean hasDuration = lastArg.equalsIgnoreCase("perm") || lastArg.matches("(?i)^\\d+[mhd]$");
-
-            long duration;
-            String reason;
-            if (hasDuration && args.length >= 3) {
-                duration = parseDuration(lastArg);
-                reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length - 1));
-            } else {
-                reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-                duration = findDurationByReason(reason);
-            }
-            applyPunishment(sender, firstArg, name.equals("ban"), duration, reason);
+            boolean hasDur = args.length >= 3 && (lastArg.equalsIgnoreCase("perm") || lastArg.matches("(?i)^\\d+[mhd]$"));
+            String reason = hasDur
+                    ? String.join(" ", Arrays.copyOfRange(args, 1, args.length - 1))
+                    : String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+            long dur = hasDur ? parseDuration(lastArg) : findDurationByReason(reason);
+            applyPunishment(sender, target, cName.equals("ban"), dur, reason);
             return true;
         }
 
-        if (name.equals("unban")) {
-            if (args.length == 0) return true;
-            db.set("bans." + firstArg.toLowerCase(), null);
+        if (cName.equals("unban")) {
+            if (args.length < 1) return true;
+            String t = List.of(args).get(0);
+            db.set("bans." + t.toLowerCase(), null);
             saveDb();
-            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + firstArg + " &fбыл разбанен " + getPrefix(sender) + "&#00E5FF" + sender.getName()));
+            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + t + " &fбыл разбанен " + getPrefix(sender) + "&#00FF66" + sender.getName()));
             return true;
         }
 
-        if (name.equals("unmute")) {
-            if (args.length == 0) return true;
-            db.set("mutes." + firstArg.toLowerCase(), null);
+        if (cName.equals("unmute")) {
+            if (args.length < 1) return true;
+            String t = List.of(args).get(0);
+            db.set("mutes." + t.toLowerCase(), null);
             saveDb();
-            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + firstArg + " &fбыл размучен " + getPrefix(sender) + "&#00E5FF" + sender.getName()));
+            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + t + " &fбыл размучен " + getPrefix(sender) + "&#00FF66" + sender.getName()));
             return true;
         }
         return true;
     }
 
-    private void applyPunishment(CommandSender sender, String targetName, boolean isBan, long durationMs, String reason) {
-        Player onlineTarget = Bukkit.getPlayerExact(targetName);
-        if (onlineTarget != null && onlineTarget.hasPermission("mirtime.punish.bypass")) {
+    public void applyPunishment(CommandSender sender, String targetName, boolean isBan, long durationMs, String reason) {
+        Player online = Bukkit.getPlayerExact(targetName);
+        if (online != null && online.hasPermission("mirtime.punish.bypass")) {
             sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ этого игрока иммунитет к наказаниям (mirtime.punish.bypass)!"));
             return;
         }
-
-        String adminDisplay = getPrefix(sender) + "&#00FF66" + sender.getName();
         String key = (isBan ? "bans." : "mutes.") + targetName.toLowerCase();
-        long until = (durationMs == -1) ? -1 : System.currentTimeMillis() + durationMs;
-
+        long until = durationMs == -1L ? -1L : System.currentTimeMillis() + durationMs;
         db.set(key + ".until", until);
         db.set(key + ".reason", reason);
         db.set(key + ".admin", sender.getName());
         saveDb();
 
-        String timeText = (durationMs == -1) ? "Навсегда" : formatTime(durationMs);
+        String timeText = durationMs == -1L ? "Навсегда" : formatTime(durationMs);
         String badge = isBan ? "&c&l[БАН]" : "&#00E5FF&l[МУТ]";
-        String actionText = isBan ? "&cзабанил" : "&#00E5FFзамутил";
+        String act = isBan ? "&cзабанил" : "&#00E5FFзамутил";
 
-        Bukkit.broadcastMessage(color("&#0055ff&l&m                                                "));
-        Bukkit.broadcastMessage(color(" " + badge + " &#0055ff&lMIR-TIME &8» " + adminDisplay + " " + actionText + " &fигрока &#00FF66" + targetName));
+        Bukkit.broadcastMessage(color("&#0055ff&l&m                                                  "));
+        Bukkit.broadcastMessage(color(" &#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» " + badge + " " + getPrefix(sender) + "&#00FF66" + sender.getName() + " " + act + " &fигрока &#00FF66" + targetName));
         Bukkit.broadcastMessage(color(" &#0055ff● &fСтатья: &#00E5FF" + reason));
         Bukkit.broadcastMessage(color(" &#0055ff● &fСрок наказания: &#00FF66" + timeText));
-        Bukkit.broadcastMessage(color("&#0055ff&l&m                                                "));
+        Bukkit.broadcastMessage(color("&#0055ff&l&m                                                  "));
 
-        if (onlineTarget != null) {
-            frozenPlayers.remove(onlineTarget.getUniqueId());
-            if (isBan) {
-                onlineTarget.kickPlayer(buildBanScreen(reason, sender.getName(), until));
-            } else {
-                onlineTarget.playSound(onlineTarget.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
-            }
+        if (isBan && online != null) {
+            if (checkArena.isSuspect(online.getUniqueId())) checkArena.endCheck(online.getUniqueId(), true);
+            online.kickPlayer(buildBanScreen(reason, sender.getName(), until));
         }
+        if (sender instanceof Player p) p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1f);
     }
-
     private String buildBanScreen(String reason, String admin, long until) {
-        String dateStr = (until == -1) ? "Никогда (Перманентно)" : new SimpleDateFormat("dd.MM.yyyy HH:mm").format(new Date(until));
+        String dateStr = until == -1L ? "Никогда (Перманентно)" : new SimpleDateFormat("dd.MM.yyyy HH:mm").format(new Date(until));
         String site = getConfig().getString("site-link", "don.mir-time.ru");
-        return color("&#0055ff&l⚡ &#00E5FF&lСЕРВЕР MIR-TIME &#0055ff&l⚡\n\n" +
-                "&c&lВАШ АККАУНТ ЗАБЛОКИРОВАН!\n\n" +
-                "&fСтатья: &#00E5FF" + reason + "\n" +
-                "&fВыдал: &#00FF66" + admin + "\n" +
-                "&fДата разбана: &#00FF66" + dateStr + "\n\n" +
-                "&7Купить разбан или подать апелляцию:\n" +
-                "&#00E5FF&n" + site);
+        return color("&#0055ff&l⚡ &#00E5FF&lСЕРВЕР MIR-TIME &#0055ff&l⚡\n\n&c&lВАШ АККАУНТ ЗАБЛОКИРОВАН!\n\n&fСтатья: &#00E5FF" + reason
+                + "\n&fВыдал: &#00FF66" + admin + "\n&fДата разбана: &#00FF66" + dateStr + "\n\n&7Купить разбан или подать апелляцию:\n&#00E5FF&n" + site);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
     public void onLogin(PlayerLoginEvent e) {
         String key = "bans." + e.getPlayer().getName().toLowerCase();
-        if (!db.contains(key)) return;
-        long until = db.getLong(key + ".until");
-        if (until != -1 && System.currentTimeMillis() > until) {
-            db.set(key, null);
-            saveDb();
-            return;
-        }
-        e.disallow(PlayerLoginEvent.Result.KICK_BANNED, buildBanScreen(
-                db.getString(key + ".reason", "Нарушение правил"),
-                db.getString(key + ".admin", "Администрация"),
-                until
-        ));
-    }
-    private boolean checkMuted(Player p) {
-        if (frozenPlayers.contains(p.getUniqueId())) return false;
-        String key = "mutes." + p.getName().toLowerCase();
-        if (!db.contains(key)) return false;
-        long until = db.getLong(key + ".until");
-        if (until != -1 && System.currentTimeMillis() > until) {
-            db.set(key, null);
-            saveDb();
-            return false;
-        }
-        String rem = (until == -1) ? "Навсегда" : formatTime(until - System.currentTimeMillis());
-        p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ вас мут! &fСтатья: &#00E5FF" + db.getString(key + ".reason") + " &8(&fОсталось: &#00FF66" + rem + "&8)"));
-        return true;
-    }
-
-    private boolean checkChatFilter(Player p, String rawMessage) {
-        if (!getConfig().getBoolean("chat-filter.enabled", true)) return false;
-        if (p.hasPermission("mirtime.punish.filter.bypass")) return false;
-        List<String> bannedWords = getConfig().getStringList("chat-filter.words");
-        if (bannedWords.isEmpty()) return false;
-
-        String clean = rawMessage.toLowerCase().trim();
-        String[] tokens = clean.replaceAll("[^a-zа-яё0-9.\\s]", " ").split("\\s+");
-        boolean matched = false;
-
-        for (String bad : bannedWords) {
-            String target = bad.toLowerCase();
-            if (target.contains(" ") || target.contains(".")) {
-                if (clean.contains(target)) {
-                    matched = true;
-                    break;
-                }
+        if (db.contains(key)) {
+            long until = db.getLong(key + ".until");
+            if (until == -1L || System.currentTimeMillis() < until) {
+                e.disallow(PlayerLoginEvent.Result.KICK_BANNED, buildBanScreen(db.getString(key + ".reason", "Нарушение правил"), db.getString(key + ".admin", "Администрация"), until));
             } else {
-                for (String w : tokens) {
-                    if (w.equals(target)) {
-                        matched = true;
-                        break;
-                    }
-                }
+                db.set(key, null);
+                saveDb();
             }
-            if (matched) break;
         }
-        if (!matched) return false;
-
-        int maxWarns = getConfig().getInt("chat-filter.max-warnings", 3);
-        int current = filterWarnings.getOrDefault(p.getUniqueId(), 0) + 1;
-        p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 1f, 1.1f);
-
-        if (current >= maxWarns) {
-            filterWarnings.remove(p.getUniqueId());
-            long dur = parseDuration(getConfig().getString("chat-filter.mute-duration", "30m"));
-            String reason = getConfig().getString("chat-filter.mute-reason", "Пункт 3.7 - Авто-фильтр");
-            Bukkit.getScheduler().runTask(this, () -> applyPunishment(Bukkit.getConsoleSender(), p.getName(), false, dur, reason));
-        } else {
-            filterWarnings.put(p.getUniqueId(), current);
-            p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cЗапрещённое слово в чате! Предупреждение: &e[" + current + "/" + maxWarns + "]"));
-        }
-        return true;
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPaperChat(AsyncChatEvent e) {
-        if (checkMuted(e.getPlayer())) {
-            e.setCancelled(true);
-            return;
-        }
-        String text = PlainTextComponentSerializer.plainText().serialize(e.message());
-        if (checkChatFilter(e.getPlayer(), text)) e.setCancelled(true);
+        if (checkMuted(e.getPlayer())) e.setCancelled(true);
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
+    @EventHandler
     public void onCommandPreprocess(PlayerCommandPreprocessEvent e) {
         String msg = e.getMessage().toLowerCase();
-        if (msg.startsWith("/msg ") || msg.startsWith("/tell ") || msg.startsWith("/w ") || msg.startsWith("/m ") || msg.startsWith("/r ")) {
-            if (checkMuted(e.getPlayer())) e.setCancelled(true);
+        if ((msg.startsWith("/msg ") || msg.startsWith("/tell ") || msg.startsWith("/w ") || msg.startsWith("/m ") || msg.startsWith("/r ")) && checkMuted(e.getPlayer())) {
+            e.setCancelled(true);
         }
     }
 
-    @EventHandler
-    public void onMove(PlayerMoveEvent e) {
-        if (frozenPlayers.contains(e.getPlayer().getUniqueId())) {
-            if (e.getFrom().getX() != e.getTo().getX() || e.getFrom().getZ() != e.getTo().getZ()) {
-                e.setTo(e.getFrom());
-            }
+    private boolean checkMuted(Player p) {
+        String key = "mutes." + p.getName().toLowerCase();
+        if (!db.contains(key)) return false;
+        long until = db.getLong(key + ".until");
+        if (until != -1L && System.currentTimeMillis() >= until) {
+            db.set(key, null);
+            saveDb();
+            return false;
         }
+        String rem = until == -1L ? "Навсегда" : formatTime(until - System.currentTimeMillis());
+        p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ вас мут! &fСтатья: &#00E5FF" + db.getString(key + ".reason") + " &8(&fОсталось: &#00FF66" + rem + "&8)"));
+        return true;
     }
 
-    @EventHandler
-    public void onQuit(PlayerQuitEvent e) {
-        Player p = e.getPlayer();
-        if (frozenPlayers.remove(p.getUniqueId())) {
-            applyPunishment(Bukkit.getConsoleSender(), p.getName(), true, 14L * 86400000L, "Пункт 2.1 - Выход с проверки на читы");
-        }
-    }
-
-    private void openPunishMenu(Player admin, String target) {
-        int page = punishPages.getOrDefault(admin.getUniqueId(), 0);
+    public void openPunishMenu(Player p, String target) {
+        int page = punishPages.getOrDefault(p.getUniqueId(), 0);
         Inventory inv = Bukkit.createInventory(null, 54, color("&#0055ff&l⚡ Наказание: &#00FF66" + target + " &8[Стр. " + (page + 1) + "]"));
         ItemStack blue = item(Material.BLUE_STAINED_GLASS_PANE, "&#0055ff▪", null);
         ItemStack cyan = item(Material.LIGHT_BLUE_STAINED_GLASS_PANE, "&#00E5FF▫", null);
-        for (int s : new int[]{0,1,7,8,9,17,18,26,27,35,36,44,45,46,52,53}) inv.setItem(s, blue);
-        for (int s : new int[]{2,3,4,5,6,47,48,49,50,51}) inv.setItem(s, cyan);
+        for (int s : new int[]{0, 1, 7, 8, 9, 17, 36, 44, 45, 46, 52, 53}) inv.setItem(s, blue);
+        for (int s : new int[]{2, 3, 4, 5, 6, 18, 26, 27, 35, 47, 48, 49, 50, 51}) inv.setItem(s, cyan);
 
         slotToTemplate.clear();
         ConfigurationSection sec = getConfig().getConfigurationSection("templates");
         if (sec != null) {
             List<String> keys = new ArrayList<>(sec.getKeys(false));
             int[] grid = {10,11,12,13,14,15,16, 19,20,21,22,23,24,25, 28,29,30,31,32,33,34, 37,38,39,40,41,42,43};
-            int perPage = grid.length;
-            int start = page * perPage;
-
-            for (int i = 0; i < perPage && (start + i) < keys.size(); i++) {
-                String key = keys.get(start + i);
-                int slot = grid[i];
-                Material mat = Material.matchMaterial(sec.getString(key + ".material", "PAPER"));
+            int start = page * 28;
+            for (int i = 0; i < 28 && (start + i) < keys.size(); i++) {
+                String k = keys.get(start + i);
+                Material mat = Material.matchMaterial(getConfig().getString("templates." + k + ".material", "PAPER"));
                 if (mat == null) mat = Material.PAPER;
-                inv.setItem(slot, item(mat, sec.getString(key + ".name", key), sec.getStringList(key + ".lore")));
-                slotToTemplate.put(slot, key);
+                inv.setItem(grid[i], item(mat, getConfig().getString("templates." + k + ".name", k), getConfig().getStringList("templates." + k + ".lore")));
+                slotToTemplate.put(grid[i], k);
             }
-
             if (page > 0) inv.setItem(48, item(Material.ARROW, "&#00E5FF&l[◀ Предыдущая страница]", null));
-            if (start + perPage < keys.size()) inv.setItem(50, item(Material.ARROW, "&#00FF66&l[Следующая страница ▶]", null));
+            if (start + 28 < keys.size()) inv.setItem(50, item(Material.ARROW, "&#00FF66&l[Следующая страница ▶]", null));
         }
-        admin.openInventory(inv);
+        p.openInventory(inv);
     }
 
     @EventHandler
@@ -418,50 +296,35 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         if (!(e.getWhoClicked() instanceof Player p)) return;
         if (!e.getView().getTitle().contains("Наказание:")) return;
         e.setCancelled(true);
-
         String target = punishTargets.get(p.getUniqueId());
         if (target == null) return;
-
         int slot = e.getRawSlot();
         int page = punishPages.getOrDefault(p.getUniqueId(), 0);
-        if (slot == 48 && page > 0) {
-            punishPages.put(p.getUniqueId(), page - 1);
-            openPunishMenu(p, target);
-            return;
-        }
-        if (slot == 50 && e.getCurrentItem() != null && e.getCurrentItem().getType() == Material.ARROW) {
-            punishPages.put(p.getUniqueId(), page + 1);
-            openPunishMenu(p, target);
-            return;
-        }
-
-        String key = slotToTemplate.get(slot);
-        if (key == null) return;
-
-        String path = "templates." + key;
-        boolean isBan = getConfig().getString(path + ".type", "BAN").equalsIgnoreCase("BAN");
-        long duration = parseDuration(getConfig().getString(path + ".duration", "1d"));
-        String reason = getConfig().getString(path + ".reason", "Нарушение правил");
-
-        punishPages.remove(p.getUniqueId());
-        applyPunishment(p, target, isBan, duration, reason);
+        if (slot == 48 && page > 0) { punishPages.put(p.getUniqueId(), page - 1); openPunishMenu(p, target); return; }
+        if (slot == 50 && e.getCurrentItem() != null && e.getCurrentItem().getType() == Material.ARROW) { punishPages.put(p.getUniqueId(), page + 1); openPunishMenu(p, target); return; }
+        String k = slotToTemplate.get(slot);
+        if (k == null) return;
+        boolean isBan = getConfig().getString("templates." + k + ".type", "BAN").equalsIgnoreCase("BAN");
+        long dur = parseDuration(getConfig().getString("templates." + k + ".duration", "1d"));
+        String reason = getConfig().getString("templates." + k + ".reason", k);
         p.closeInventory();
+        applyPunishment(p, target, isBan, dur, reason);
     }
 
     private long findDurationByReason(String reason) {
         ConfigurationSection sec = getConfig().getConfigurationSection("templates");
         if (sec != null) {
-            for (String key : sec.getKeys(false)) {
-                if (sec.getString(key + ".reason", "").equalsIgnoreCase(reason)) {
-                    return parseDuration(sec.getString(key + ".duration", "1d"));
+            for (String k : sec.getKeys(false)) {
+                if (getConfig().getString("templates." + k + ".reason", "").equalsIgnoreCase(reason)) {
+                    return parseDuration(getConfig().getString("templates." + k + ".duration", "1d"));
                 }
             }
         }
-        return 3_600_000L;
+        return -1L;
     }
 
-    private long parseDuration(String input) {
-        if (input == null || input.equalsIgnoreCase("perm") || input.equalsIgnoreCase("forever")) return -1;
+    public static long parseDuration(String input) {
+        if (input == null || input.equalsIgnoreCase("perm") || input.equalsIgnoreCase("forever")) return -1L;
         try {
             char unit = Character.toLowerCase(input.charAt(input.length() - 1));
             long val = Long.parseLong(input.substring(0, input.length() - 1));
@@ -469,29 +332,26 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 case 'm' -> val * 60_000L;
                 case 'h' -> val * 3_600_000L;
                 case 'd' -> val * 86_400_000L;
-                default -> 3_600_000L;
+                default -> -1L;
             };
-        } catch (Exception e) {
-            return 3_600_000L;
-        }
+        } catch (Exception e) { return -1L; }
     }
 
-    private String formatTime(long ms) {
-        long sec = ms / 1000;
-        long days = sec / 86400;
-        long hours = (sec % 86400) / 3600;
-        long mins = (sec % 3600) / 60;
+    public static String formatTime(long ms) {
+        long days = ms / 86_400_000L;
+        long hours = (ms % 86_400_000L) / 3_600_000L;
+        long mins = (ms % 3_600_000L) / 60_000L;
         if (days > 0) return days + " дн. " + hours + " ч.";
         if (hours > 0) return hours + " ч. " + mins + " мин.";
         return Math.max(1, mins) + " мин.";
     }
 
-    private ItemStack item(Material mat, String name, List<String> lore) {
+    public static ItemStack item(Material mat, String name, List<String> lore) {
         ItemStack is = new ItemStack(mat);
         ItemMeta meta = is.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(color(name));
-            if (lore != null) {
+            if (lore != null && !lore.isEmpty()) {
                 List<String> list = new ArrayList<>();
                 for (String s : lore) list.add(color(s));
                 meta.setLore(list);
@@ -504,13 +364,11 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
 
     public static String color(String text) {
         if (text == null) return "";
-        Pattern pattern = Pattern.compile("&#([A-Fa-f0-9]{6})");
-        Matcher matcher = pattern.matcher(text);
+        Matcher matcher = Pattern.compile("&#([A-Fa-f0-9]{6})").matcher(text);
         StringBuffer buffer = new StringBuffer();
         while (matcher.find()) {
-            String hex = matcher.group(1);
             StringBuilder rep = new StringBuilder("§x");
-            for (char c : hex.toCharArray()) rep.append('§').append(c);
+            for (char c : matcher.group(1).toCharArray()) rep.append('§').append(c);
             matcher.appendReplacement(buffer, rep.toString());
         }
         matcher.appendTail(buffer);
