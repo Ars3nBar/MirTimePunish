@@ -122,6 +122,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String name = command.getName().toLowerCase();
+        String arg0 = args.length > 0 ? Arrays.stream(args).findFirst().orElse("") : "";
+        String arg1 = args.length > 1 ? Arrays.stream(args).skip(1).findFirst().orElse("") : "";
 
         if (name.equals("report")) {
             if (!(sender instanceof Player p)) return true;
@@ -129,9 +131,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/report <ник> <причина>"));
                 return true;
             }
-            String target = args;
             String reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
-            modPanel.createReport(p, target, reason);
+            modPanel.createReport(p, arg0, reason);
             return true;
         }
 
@@ -143,13 +144,13 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
 
         if (name.equals("spec")) {
             if (!(sender instanceof Player p)) return true;
-            Player target = args.length > 0 ? Bukkit.getPlayer(args) : null;
+            Player target = args.length > 0 ? Bukkit.getPlayer(arg0) : null;
             modPanel.toggleSpec(p, target);
             return true;
         }
 
         if (name.equals("punish")) {
-            if (args.length == 1 && args.equalsIgnoreCase("reload")) {
+            if (args.length == 1 && arg0.equalsIgnoreCase("reload")) {
                 if (!sender.hasPermission("mirtime.punish.reload")) {
                     sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУ вас нет права mirtime.punish.reload!"));
                     return true;
@@ -164,9 +165,9 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/punish <ник> &7или &#00E5FF/punish reload"));
                 return true;
             }
-            punishTargets.put(p.getUniqueId(), args);
+            punishTargets.put(p.getUniqueId(), arg0);
             punishPages.put(p.getUniqueId(), 0);
-            openPunishMenu(p, args);
+            openPunishMenu(p, arg0);
             return true;
         }
 
@@ -176,7 +177,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/check <ник>"));
                 return true;
             }
-            Player target = Bukkit.getPlayer(args);
+            Player target = Bukkit.getPlayer(arg0);
             if (target == null) {
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cИгрок не в сети."));
                 return true;
@@ -196,8 +197,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 return true;
             }
             try {
-                int mins = Integer.parseInt(args);
-                checkManager.addCheckTime(p, args, mins);
+                int mins = Integer.parseInt(arg1);
+                checkManager.addCheckTime(p, arg0, mins);
             } catch (NumberFormatException ex) {
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУкажите целое число минут!"));
             }
@@ -210,7 +211,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/" + name + " <ник> <статья> [срок]"));
                 return true;
             }
-            String target = args;
             String lastArg = args[args.length - 1];
             boolean hasDuration = args.length >= 3 && (lastArg.equalsIgnoreCase("perm") || lastArg.matches("(?i)^\\d+[smhd]$"));
 
@@ -223,31 +223,29 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 reason = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
                 duration = findDurationByReason(reason);
             }
-            applyPunishment(sender, target, isBan, duration, reason);
+            applyPunishment(sender, arg0, isBan, duration, reason);
             return true;
         }
 
         if (name.equals("unban")) {
             if (args.length < 1) return true;
-            String target = args;
-            db.set("bans." + target.toLowerCase(), null);
+            db.set("bans." + arg0.toLowerCase(), null);
             saveDb();
             String adminPrefix = getPrefix(sender);
-            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + target + " &fбыл разбанен " + adminPrefix + "&#00E5FF" + sender.getName()));
+            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + arg0 + " &fбыл разбанен " + adminPrefix + "&#00E5FF" + sender.getName()));
             return true;
         }
 
         if (name.equals("unmute")) {
             if (args.length < 1) return true;
-            String target = args;
-            db.set("mutes." + target.toLowerCase(), null);
+            db.set("mutes." + arg0.toLowerCase(), null);
             saveDb();
-            Player onlineTarget = Bukkit.getPlayerExact(target);
+            Player onlineTarget = Bukkit.getPlayerExact(arg0);
             if (onlineTarget != null && chatFilter != null) {
                 chatFilter.resetWarnings(onlineTarget.getUniqueId());
             }
             String adminPrefix = getPrefix(sender);
-            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + target + " &fбыл размучен " + adminPrefix + "&#00E5FF" + sender.getName()));
+            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + arg0 + " &fбыл размучен " + adminPrefix + "&#00E5FF" + sender.getName()));
             return true;
         }
 
