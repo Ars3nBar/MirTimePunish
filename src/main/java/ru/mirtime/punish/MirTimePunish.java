@@ -9,7 +9,6 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
-import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -82,7 +81,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
 
         getLogger().info("MirTimePunish v1.2.0 успешно запущен!");
     }
-
     public ModPanel getModPanel() {
         return modPanel;
     }
@@ -125,7 +123,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String name = command.getName().toLowerCase();
 
-        // /report <ник> <причина>
         if (name.equals("report")) {
             if (!(sender instanceof Player p)) return true;
             if (args.length < 2) {
@@ -138,14 +135,12 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             return true;
         }
 
-        // /reports
         if (name.equals("reports")) {
             if (!(sender instanceof Player p)) return true;
             modPanel.openReportsMenu(p);
             return true;
         }
 
-        // /spec [ник]
         if (name.equals("spec")) {
             if (!(sender instanceof Player p)) return true;
             Player target = args.length > 0 ? Bukkit.getPlayer(args) : null;
@@ -153,7 +148,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             return true;
         }
 
-        // /punish <ник> | /punish reload
         if (name.equals("punish")) {
             if (args.length == 1 && args.equalsIgnoreCase("reload")) {
                 if (!sender.hasPermission("mirtime.punish.reload")) {
@@ -175,8 +169,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             openPunishMenu(p, args);
             return true;
         }
-
-        // /check <ник>
         if (name.equals("check")) {
             if (!(sender instanceof Player p)) return true;
             if (args.length < 1) {
@@ -196,7 +188,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             return true;
         }
 
-        // /checktime <ник> <минуты>
         if (name.equals("checktime")) {
             if (!(sender instanceof Player p)) return true;
             if (args.length < 2) {
@@ -211,7 +202,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             }
             return true;
         }
-        // /ban <ник> <статья> [срок] и /mute <ник> <статья> [срок]
+
         if (name.equals("ban") || name.equals("mute")) {
             boolean isBan = name.equals("ban");
             if (args.length < 2) {
@@ -235,7 +226,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             return true;
         }
 
-        // /unban <ник>
         if (name.equals("unban")) {
             if (args.length < 1) return true;
             String target = args;
@@ -246,14 +236,13 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             return true;
         }
 
-        // /unmute <ник>
         if (name.equals("unmute")) {
             if (args.length < 1) return true;
             String target = args;
             db.set("mutes." + target.toLowerCase(), null);
             saveDb();
             Player onlineTarget = Bukkit.getPlayerExact(target);
-            if (onlineTarget != null) {
+            if (onlineTarget != null && chatFilter != null) {
                 chatFilter.resetWarnings(onlineTarget.getUniqueId());
             }
             String adminPrefix = getPrefix(sender);
@@ -263,7 +252,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
 
         return true;
     }
-
     public void applyPunishment(CommandSender sender, String targetName, boolean isBan, long durationMs, String reason) {
         Player onlineTarget = Bukkit.getPlayerExact(targetName);
         if (onlineTarget != null && onlineTarget.hasPermission("mirtime.punish.bypass")) {
@@ -271,14 +259,12 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             return;
         }
 
-        // Если игрок был на проверке в отдельном мире — завершаем её и возвращаем модератора назад
         if (onlineTarget != null && checkManager != null && checkManager.isFrozen(onlineTarget.getUniqueId())) {
             checkManager.finishCheck(onlineTarget.getUniqueId(), false);
         }
 
         String adminDisplay = getPrefix(sender) + sender.getName();
 
-        // Если срок == 0 (например, пункт 1.9а — кик-предупреждение)
         if (isBan && durationMs == 0L) {
             Bukkit.broadcastMessage(color("&#0055ff&l&m                                                  "));
             Bukkit.broadcastMessage(color(" &#00FF66&l[ПРЕДУПРЕЖДЕНИЕ] &#00E5FF&lMIR-TIME &8» " + adminDisplay + " &fвыдал предупреждение игроку &#00FF66" + targetName));
@@ -356,7 +342,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 until
         ));
     }
-
     private boolean checkMuted(Player p) {
         String key = "mutes." + p.getName().toLowerCase();
         if (!db.contains(key)) return false;
@@ -395,6 +380,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             }
         }
     }
+
     public void openPunishMenu(Player mod, String targetName) {
         int page = punishPages.getOrDefault(mod.getUniqueId(), 0);
         Inventory inv = Bukkit.createInventory(null, 54, color("&#0055ff&l⚡ Наказание: &#00FF66" + targetName + " &8[Стр. " + (page + 1) + "]"));
