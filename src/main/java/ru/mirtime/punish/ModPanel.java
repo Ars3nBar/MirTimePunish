@@ -33,12 +33,14 @@ public class ModPanel implements Listener {
         public final String target;
         public final String reason;
         public final String time;
+        public final boolean isAntiCheat;
 
-        public ReportEntry(String sender, String target, String reason) {
+        public ReportEntry(String sender, String target, String reason, boolean isAntiCheat) {
             this.sender = sender;
             this.target = target;
             this.reason = reason;
             this.time = new SimpleDateFormat("HH:mm").format(new Date());
+            this.isAntiCheat = isAntiCheat;
         }
     }
 
@@ -51,7 +53,7 @@ public class ModPanel implements Listener {
     }
 
     public void createReport(Player staff, String targetName, String reason) {
-        ReportEntry entry = new ReportEntry(staff.getName(), targetName, reason);
+        ReportEntry entry = new ReportEntry(staff.getName(), targetName, reason, false);
         reports.add(entry);
 
         staff.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Жалоба на игрока &f" + targetName + " &#00FF66отправлена модерации!"));
@@ -69,14 +71,34 @@ public class ModPanel implements Listener {
         }
     }
 
+    public void createSystemReport(String source, String targetName, String reason) {
+        for (ReportEntry existing : reports) {
+            if (existing.isAntiCheat && existing.target.equalsIgnoreCase(targetName) && existing.reason.equalsIgnoreCase(reason)) {
+                return;
+            }
+        }
+        ReportEntry entry = new ReportEntry(source, targetName, reason, true);
+        reports.add(entry);
+
+        TextComponent msg = new TextComponent(MirTimePunish.color("&#FF2A55&l[MT-AC] &#00E5FFДетект: &f" + targetName + " &7➔ &c" + reason + " "));
+        TextComponent btn = new TextComponent(MirTimePunish.color("&#00FF66&l[ПАНЕЛЬ /REPORTS]"));
+        btn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/reports"));
+        msg.addExtra(btn);
+
+        for (Player mod : Bukkit.getOnlinePlayers()) {
+            if (mod.hasPermission("mirtime.punish.reports")) {
+                mod.spigot().sendMessage(msg);
+                mod.playSound(mod.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 1.0f, 1.4f);
+            }
+        }
+    }
+
     public void toggleSpec(Player mod, Player target) {
         UUID id = mod.getUniqueId();
 
         if (specReturnLoc.containsKey(id)) {
             Location ret = specReturnLoc.remove(id);
-            if (ret != null) {
-                mod.teleport(ret);
-            }
+            if (ret != null) mod.teleport(ret);
             GameMode prevMode = specReturnMode.remove(id);
             mod.setGameMode(prevMode != null ? prevMode : GameMode.SURVIVAL);
             mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fВы вышли из режима слежки и вернулись назад."));
@@ -105,10 +127,8 @@ public class ModPanel implements Listener {
             blue.setItemMeta(bMeta);
         }
 
-        int[] border = {0, 1, 2, 3, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53};
-        for (int s : border) {
-            inv.setItem(s, blue);
-        }
+        int[] border = {0, 1, 2, 3, 5, 6, 7, 9, 17, 18, 26, 27, 35, 36, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53};
+        for (int s : border) inv.setItem(s, blue);
 
         ItemStack exitSpec = new ItemStack(Material.ENDER_EYE);
         ItemMeta eMeta = exitSpec.getItemMeta();
@@ -117,6 +137,14 @@ public class ModPanel implements Listener {
             exitSpec.setItemMeta(eMeta);
         }
         inv.setItem(4, exitSpec);
+
+        ItemStack clearAll = new ItemStack(Material.BARRIER);
+        ItemMeta cMeta = clearAll.getItemMeta();
+        if (cMeta != null) {
+            cMeta.setDisplayName(MirTimePunish.color("&c&l[✖] Очистить все жалобы"));
+            clearAll.setItemMeta(cMeta);
+        }
+        inv.setItem(8, clearAll);
 
         slotMap.clear();
         int[] slots = {
@@ -133,9 +161,10 @@ public class ModPanel implements Listener {
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             if (meta != null) {
                 meta.setOwningPlayer(Bukkit.getOfflinePlayer(r.target));
-                meta.setDisplayName(MirTimePunish.color("&c&lНарушитель: &f" + r.target + " &8[" + r.time + "]"));
+                String tag = r.isAntiCheat ? "&#FF2A55&l[MT-AC] " : "&c&l[ЖАЛОБА] ";
+                meta.setDisplayName(MirTimePunish.color(tag + "&f" + r.target + " &8[" + r.time + "]"));
                 meta.setLore(List.of(
-                        MirTimePunish.color("&#0055ff● &fОтправил: &#00E5FF" + r.sender),
+                        MirTimePunish.color("&#0055ff● &fИсточник: &#00E5FF" + r.sender),
                         MirTimePunish.color("&#0055ff● &fПричина: &e" + r.reason),
                         "",
                         MirTimePunish.color("&#00FF66[ЛКМ] &fТелепорт и скрытая слежка (/spec)"),
@@ -162,6 +191,12 @@ public class ModPanel implements Listener {
         if (slot == 4) {
             p.closeInventory();
             toggleSpec(p, null);
+            return;
+        }
+        if (slot == 8) {
+            reports.clear();
+            p.playSound(p.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
+            openReportsMenu(p);
             return;
         }
 
