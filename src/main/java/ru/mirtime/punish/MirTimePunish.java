@@ -50,11 +50,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
 
         dbFile = new File(getDataFolder(), "punishments.yml");
         if (!dbFile.exists()) {
-            try {
-                dbFile.createNewFile();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+            try { dbFile.createNewFile(); } catch (IOException e) { e.printStackTrace(); }
         }
         db = YamlConfiguration.loadConfiguration(dbFile);
 
@@ -65,7 +61,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         TabHelper tabHelper = new TabHelper(this);
         List<String> commands = List.of(
                 "punish", "check", "checktime", "report",
-                "reports", "spec", "ban", "mute", "unban", "unmute"
+                "reports", "spec", "ban", "mute", "unban", "unmute", "acreport"
         );
         for (String cmd : commands) {
             if (getCommand(cmd) != null) {
@@ -79,27 +75,15 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         Bukkit.getPluginManager().registerEvents(checkManager, this);
         Bukkit.getPluginManager().registerEvents(chatFilter, this);
 
-        getLogger().info("MirTimePunish v1.2.0 успешно запущен!");
+        getLogger().info("MirTimePunish v2.0.0 (Синхронизация с MT-AC v3.0 + Защита проверок) запущен!");
     }
 
-    public ModPanel getModPanel() {
-        return modPanel;
-    }
-
-    public CheckManager getCheckManager() {
-        return checkManager;
-    }
-
-    public ChatFilter getChatFilter() {
-        return chatFilter;
-    }
+    public ModPanel getModPanel() { return modPanel; }
+    public CheckManager getCheckManager() { return checkManager; }
+    public ChatFilter getChatFilter() { return chatFilter; }
 
     private void saveDb() {
-        try {
-            db.save(dbFile);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        try { db.save(dbFile); } catch (IOException e) { e.printStackTrace(); }
     }
 
     private String getPrefix(CommandSender sender) {
@@ -109,11 +93,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                     Class<?> papi = Class.forName("me.clip.placeholderapi.PlaceholderAPI");
                     Method setPlaceholders = papi.getMethod("setPlaceholders", Player.class, String.class);
                     String prefix = (String) setPlaceholders.invoke(null, p, "%luckperms_prefix%");
-                    if (prefix != null && !prefix.equals("%luckperms_prefix%") && !prefix.isEmpty()) {
-                        return prefix;
-                    }
-                } catch (Exception ignored) {
-                }
+                    if (prefix != null && !prefix.equals("%luckperms_prefix%") && !prefix.isEmpty()) return prefix;
+                } catch (Exception ignored) {}
             }
             return "&#00E5FF[Персонал] ";
         }
@@ -122,8 +103,16 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         String name = command.getName().toLowerCase();
-        String arg0 = args.length > 0 ? Arrays.stream(args).findFirst().orElse("") : "";
-        String arg1 = args.length > 1 ? Arrays.stream(args).skip(1).findFirst().orElse("") : "";
+        String arg0 = args.length > 0 ? args[0] : "";
+        String arg1 = args.length > 1 ? args[1] : "";
+
+        if (name.equals("acreport")) {
+            if (args.length >= 2) {
+                String details = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+                modPanel.createSystemReport("MT-AC v3.0", arg0, details);
+            }
+            return true;
+        }
 
         if (name.equals("report")) {
             if (!(sender instanceof Player p)) return true;
@@ -159,7 +148,6 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 sender.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Конфиг config.yml успешно перезагружен!"));
                 return true;
             }
-
             if (!(sender instanceof Player p)) return true;
             if (args.length < 1) {
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИспользование: &#00FF66/punish <ник> &7или &#00E5FF/punish reload"));
@@ -197,8 +185,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 return true;
             }
             try {
-                int mins = Integer.parseInt(arg1);
-                checkManager.addCheckTime(p, arg0, mins);
+                checkManager.addCheckTime(p, arg0, Integer.parseInt(arg1));
             } catch (NumberFormatException ex) {
                 p.sendMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУкажите целое число минут!"));
             }
@@ -231,8 +218,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             if (args.length < 1) return true;
             db.set("bans." + arg0.toLowerCase(), null);
             saveDb();
-            String adminPrefix = getPrefix(sender);
-            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + arg0 + " &fбыл разбанен " + adminPrefix + "&#00E5FF" + sender.getName()));
+            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + arg0 + " &fбыл разбанен " + getPrefix(sender) + "&#00E5FF" + sender.getName()));
             return true;
         }
 
@@ -241,14 +227,10 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
             db.set("mutes." + arg0.toLowerCase(), null);
             saveDb();
             Player onlineTarget = Bukkit.getPlayerExact(arg0);
-            if (onlineTarget != null && chatFilter != null) {
-                chatFilter.resetWarnings(onlineTarget.getUniqueId());
-            }
-            String adminPrefix = getPrefix(sender);
-            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + arg0 + " &fбыл размучен " + adminPrefix + "&#00E5FF" + sender.getName()));
+            if (onlineTarget != null && chatFilter != null) chatFilter.resetWarnings(onlineTarget.getUniqueId());
+            Bukkit.broadcastMessage(color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fИгрок &#00FF66" + arg0 + " &fбыл размучен " + getPrefix(sender) + "&#00E5FF" + sender.getName()));
             return true;
         }
-
         return true;
     }
     public void applyPunishment(CommandSender sender, String targetName, boolean isBan, long durationMs, String reason) {
@@ -358,26 +340,16 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
-    public void onPaperChat(AsyncChatEvent e) {
-        if (checkMuted(e.getPlayer())) {
-            e.setCancelled(true);
-        }
-    }
+    public void onPaperChat(AsyncChatEvent e) { if (checkMuted(e.getPlayer())) e.setCancelled(true); }
 
     @EventHandler(priority = EventPriority.LOWEST)
-    public void onLegacyChat(AsyncPlayerChatEvent e) {
-        if (checkMuted(e.getPlayer())) {
-            e.setCancelled(true);
-        }
-    }
+    public void onLegacyChat(AsyncPlayerChatEvent e) { if (checkMuted(e.getPlayer())) e.setCancelled(true); }
 
     @EventHandler
     public void onCommandPreprocess(PlayerCommandPreprocessEvent e) {
         String msg = e.getMessage().toLowerCase();
         if (msg.startsWith("/msg ") || msg.startsWith("/tell ") || msg.startsWith("/w ") || msg.startsWith("/m ") || msg.startsWith("/r ")) {
-            if (checkMuted(e.getPlayer())) {
-                e.setCancelled(true);
-            }
+            if (checkMuted(e.getPlayer())) e.setCancelled(true);
         }
     }
     public void openPunishMenu(Player mod, String targetName) {
@@ -415,12 +387,8 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
                 slotToTemplate.put(slot, key);
             }
 
-            if (page > 0) {
-                inv.setItem(48, item(Material.ARROW, "&#00E5FF&l[◀ Предыдущая страница]", null));
-            }
-            if (start + perPage < keys.size()) {
-                inv.setItem(50, item(Material.ARROW, "&#00FF66&l[Следующая страница ▶]", null));
-            }
+            if (page > 0) inv.setItem(48, item(Material.ARROW, "&#00E5FF&l[◀ Предыдущая страница]", null));
+            if (start + perPage < keys.size()) inv.setItem(50, item(Material.ARROW, "&#00FF66&l[Следующая страница ▶]", null));
         }
         mod.openInventory(inv);
     }
@@ -477,9 +445,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     }
 
     public long parseDuration(String input) {
-        if (input == null || input.equalsIgnoreCase("perm") || input.equalsIgnoreCase("forever")) {
-            return -1L;
-        }
+        if (input == null || input.equalsIgnoreCase("perm") || input.equalsIgnoreCase("forever")) return -1L;
         try {
             char unit = Character.toLowerCase(input.charAt(input.length() - 1));
             long val = Long.parseLong(input.substring(0, input.length() - 1));
@@ -528,9 +494,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         while (matcher.find()) {
             String hex = matcher.group(1);
             StringBuilder rep = new StringBuilder("§x");
-            for (char c : hex.toCharArray()) {
-                rep.append('§').append(c);
-            }
+            for (char c : hex.toCharArray()) rep.append('§').append(c);
             matcher.appendReplacement(buffer, rep.toString());
         }
         matcher.appendTail(buffer);
