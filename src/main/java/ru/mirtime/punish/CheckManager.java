@@ -14,6 +14,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -44,6 +45,7 @@ public class CheckManager implements Listener {
         public long expireTimeMs;
         public final long maxHardLimitMs;
         public final BossBar bossBar;
+
         public CheckSession(Player suspect, Player mod, Location susLoc, Location modLoc) {
             this.suspectId = suspect.getUniqueId();
             this.suspectName = suspect.getName();
@@ -98,24 +100,15 @@ public class CheckManager implements Listener {
                     floor.setType((Math.abs(x) == 4 || Math.abs(z) == 4) ? Material.BLUE_STAINED_GLASS : Material.SMOOTH_QUARTZ);
                     for (int y = 100; y <= 104; y++) {
                         Block wall = checkWorld.getBlockAt(x, y, z);
-                        if (Math.abs(x) == 4 || Math.abs(z) == 4) {
-                            wall.setType(Material.BARRIER);
-                        } else {
-                            wall.setType(Material.AIR);
-                        }
+                        wall.setType((Math.abs(x) == 4 || Math.abs(z) == 4) ? Material.BARRIER : Material.AIR);
                     }
                     checkWorld.getBlockAt(x, 105, z).setType(Material.BARRIER);
                 }
             }
         }
     }
-    public boolean isFrozen(UUID uuid) {
-        return activeChecks.containsKey(uuid);
-    }
-
-    public boolean isInCheck(UUID uuid) {
-        return activeChecks.containsKey(uuid) || modToSuspect.containsKey(uuid);
-    }
+    public boolean isFrozen(UUID uuid) { return activeChecks.containsKey(uuid); }
+    public boolean isInCheck(UUID uuid) { return activeChecks.containsKey(uuid) || modToSuspect.containsKey(uuid); }
 
     public void toggleCheck(Player mod, Player target) {
         UUID targetId = target.getUniqueId();
@@ -167,6 +160,7 @@ public class CheckManager implements Listener {
         mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &7Пишите в обычный чат для приватного общения с подозреваемым."));
         mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &7Добавить время (до 25 мин всего): &#00FF66/checktime " + target.getName() + " <минуты>"));
     }
+
     public void addCheckTime(Player mod, String targetName, int addMinutes) {
         Player target = Bukkit.getPlayerExact(targetName);
         UUID targetId = (target != null) ? target.getUniqueId() : null;
@@ -175,7 +169,6 @@ public class CheckManager implements Listener {
             mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cЭтот игрок сейчас не находится на проверке."));
             return;
         }
-
         if (addMinutes <= 0) {
             mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cУкажите положительное число минут."));
             return;
@@ -195,9 +188,7 @@ public class CheckManager implements Listener {
             session.expireTimeMs = session.maxHardLimitMs;
             int actualAdded = (int) Math.ceil(remainingAllowedMs / 60000.0);
             mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &eДобавлено &#00FF66+" + actualAdded + " мин. &e(достигнут потолок 25 минут по п. 2.7)."));
-            if (target.isOnline()) {
-                target.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fМодератор продлил время проверки (максимум 25 мин. по п. 2.7)."));
-            }
+            if (target.isOnline()) target.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fМодератор продлил время проверки (максимум 25 мин. по п. 2.7)."));
             return;
         }
 
@@ -205,11 +196,8 @@ public class CheckManager implements Listener {
         session.expireTimeMs = requestedExpire;
         long totalMin = (session.expireTimeMs - session.startTimeMs) / 60000L;
         mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Добавлено +" + addMinutes + " мин. &fОбщий лимит проверки: &#00E5FF" + totalMin + "/25 мин."));
-        if (target.isOnline()) {
-            target.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fМодератор добавил &#00FF66+" + addMinutes + " мин. &fк проверке."));
-        }
+        if (target.isOnline()) target.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fМодератор добавил &#00FF66+" + addMinutes + " мин. &fк проверке."));
     }
-
     public void finishCheck(UUID suspectId, boolean clean) {
         CheckSession session = activeChecks.remove(suspectId);
         offlineGraceEnd.remove(suspectId);
@@ -223,9 +211,7 @@ public class CheckManager implements Listener {
         if (suspect != null && suspect.isOnline()) {
             suspect.teleport(session.suspectReturnLoc);
             suspect.setGameMode(session.suspectReturnMode);
-            if (clean) {
-                suspect.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Проверка успешно пройдена! Вы возвращены на место."));
-            }
+            if (clean) suspect.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &#00FF66Проверка успешно пройдена! Вы возвращены на место."));
         }
 
         Player mod = Bukkit.getPlayer(session.modId);
@@ -234,6 +220,7 @@ public class CheckManager implements Listener {
             mod.setGameMode(session.modReturnMode);
         }
     }
+
     private void startTimerTask() {
         new BukkitRunnable() {
             @Override
@@ -293,16 +280,13 @@ public class CheckManager implements Listener {
                     CheckSession session = activeChecks.get(susId);
                     if (session != null) {
                         Player mod = Bukkit.getPlayer(session.modId);
-                        if (mod != null) {
-                            mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &eВремя проверки игрока &#00FF66" + session.suspectName + " &eистекло. Проверка закрыта."));
-                        }
+                        if (mod != null) mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &eВремя проверки игрока &#00FF66" + session.suspectName + " &eистекло. Проверка закрыта."));
                         finishCheck(susId, true);
                     }
                 }
             }
         }.runTaskTimer(plugin, 10L, 10L);
     }
-
     @EventHandler(priority = EventPriority.LOWEST)
     public void onCheckChat(AsyncChatEvent e) {
         Player sender = e.getPlayer();
@@ -312,10 +296,7 @@ public class CheckManager implements Listener {
             e.setCancelled(true);
             String plainMsg = PlainTextComponentSerializer.plainText().serialize(e.message());
 
-            CheckSession session = activeChecks.containsKey(senderId)
-                    ? activeChecks.get(senderId)
-                    : activeChecks.get(modToSuspect.get(senderId));
-
+            CheckSession session = activeChecks.containsKey(senderId) ? activeChecks.get(senderId) : activeChecks.get(modToSuspect.get(senderId));
             if (session == null) return;
 
             boolean isMod = senderId.equals(session.modId);
@@ -331,7 +312,6 @@ public class CheckManager implements Listener {
             });
             return;
         }
-
         e.viewers().removeIf(audience -> (audience instanceof Player p) && isInCheck(p.getUniqueId()));
     }
 
@@ -339,7 +319,6 @@ public class CheckManager implements Listener {
     public void onCommandPreprocess(PlayerCommandPreprocessEvent e) {
         Player p = e.getPlayer();
         if (!activeChecks.containsKey(p.getUniqueId())) return;
-
         String msg = e.getMessage().toLowerCase();
         if (!msg.startsWith("/msg ") && !msg.startsWith("/m ") && !msg.startsWith("/r ")) {
             e.setCancelled(true);
@@ -350,9 +329,7 @@ public class CheckManager implements Listener {
     @EventHandler
     public void onMove(PlayerMoveEvent e) {
         if (!activeChecks.containsKey(e.getPlayer().getUniqueId())) return;
-        if (e.getFrom().getX() != e.getTo().getX() || e.getFrom().getZ() != e.getTo().getZ()) {
-            e.setTo(e.getFrom());
-        }
+        if (e.getFrom().getX() != e.getTo().getX() || e.getFrom().getZ() != e.getTo().getZ()) e.setTo(e.getFrom());
     }
 
     @EventHandler
@@ -363,16 +340,10 @@ public class CheckManager implements Listener {
         if (activeChecks.containsKey(id)) {
             CheckSession session = activeChecks.get(id);
             offlineGraceEnd.put(id, System.currentTimeMillis() + (3 * 60 * 1000L));
-
             Player mod = Bukkit.getPlayer(session.modId);
-            if (mod != null && mod.isOnline()) {
-                mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &cИгрок &#00FF66" + p.getName() + " &cвышел с сервера! Ожидание перезахода 3 минуты (п. 2.1), после чего автобан на 14 дней."));
-            }
+            if (mod != null && mod.isOnline()) mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &cИгрок &#00FF66" + p.getName() + " &cвышел с сервера! Ожидание перезахода 3 минуты (п. 2.1), после чего автобан на 14 дней."));
         }
-
-        if (modToSuspect.containsKey(id)) {
-            finishCheck(modToSuspect.get(id), true);
-        }
+        if (modToSuspect.containsKey(id)) finishCheck(modToSuspect.get(id), true);
     }
 
     @EventHandler
@@ -384,37 +355,18 @@ public class CheckManager implements Listener {
             offlineGraceEnd.remove(id);
             CheckSession session = activeChecks.get(id);
             session.bossBar.addPlayer(p);
-            if (checkWorld != null) {
-                p.teleport(new Location(checkWorld, 0.5, 100.0, 2.5, 180f, 0f));
-            }
+            if (checkWorld != null) p.teleport(new Location(checkWorld, 0.5, 100.0, 2.5, 180f, 0f));
             p.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &eВы перезашли вовремя. Проверка продолжается!"));
             Player mod = Bukkit.getPlayer(session.modId);
-            if (mod != null && mod.isOnline()) {
-                mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00FF66Игрок " + p.getName() + " перезашёл на сервер! Проверка продолжается."));
-            }
+            if (mod != null && mod.isOnline()) mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00FF66Игрок " + p.getName() + " перезашёл на сервер! Проверка продолжается."));
         } else if (checkWorld != null && p.getWorld().equals(checkWorld) && !isInCheck(id)) {
             p.teleport(Bukkit.getWorlds().get(0).getSpawnLocation());
         }
     }
 
-    @EventHandler
-    public void onDamage(EntityDamageEvent e) {
-        if (e.getEntity() instanceof Player p && isInCheck(p.getUniqueId())) {
-            e.setCancelled(true);
-        }
-    }
-
-    @EventHandler
-    public void onBreak(BlockBreakEvent e) {
-        if (checkWorld != null && e.getBlock().getWorld().equals(checkWorld)) {
-            e.setCancelled(true);
-        }
-    }
-
-    @EventHandler
-    public void onPlace(BlockPlaceEvent e) {
-        if (checkWorld != null && e.getBlock().getWorld().equals(checkWorld)) {
-            e.setCancelled(true);
-        }
-    }
+    @EventHandler public void onDamage(EntityDamageEvent e) { if (e.getEntity() instanceof Player p && isInCheck(p.getUniqueId())) e.setCancelled(true); }
+    @EventHandler public void onBreak(BlockBreakEvent e) { if (checkWorld != null && e.getBlock().getWorld().equals(checkWorld)) e.setCancelled(true); }
+    @EventHandler public void onPlace(BlockPlaceEvent e) { if (checkWorld != null && e.getBlock().getWorld().equals(checkWorld)) e.setCancelled(true); }
+    @EventHandler public void onDrop(PlayerDropItemEvent e) { if (isFrozen(e.getPlayer().getUniqueId())) e.setCancelled(true); }
+    @EventHandler public void onInvClick(InventoryClickEvent e) { if (e.getWhoClicked() instanceof Player p && isFrozen(p.getUniqueId())) e.setCancelled(true); }
 }
