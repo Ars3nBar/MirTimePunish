@@ -1,10 +1,12 @@
 name: MirTimePunish
-version: '1.2.0'
+version: '2.0.0'
 main: ru.mirtime.punish.MirTimePunish
 api-version: '1.21'
 softdepend:
   - LuckPerms
   - PlaceholderAPI
+  - MirTimeAC
+
 commands:
   punish:
     description: Меню наказаний по правилам MirTime
@@ -41,6 +43,10 @@ commands:
   unmute:
     description: Размутить игрока
     permission: mirtime.punish.unmute
+  acreport:
+    description: Системный приём репортов от античита MT-AC
+    permission: mirtime.punish.acreport
+
 permissions:
   mirtime.punish.*:
     description: Полный доступ ко всем функциям модерации
@@ -55,3 +61,4 @@ permissions:
       mirtime.punish.unmute: true
       mirtime.punish.reload: true
       mirtime.punish.filter.bypass: true
+      mirtime.punish.acreport: true
