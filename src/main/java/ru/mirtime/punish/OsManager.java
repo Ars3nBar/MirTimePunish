@@ -19,7 +19,6 @@ import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.util.List;
-import java.util.UUID;
 
 public class OsManager implements Listener {
 
@@ -27,7 +26,8 @@ public class OsManager implements Listener {
     private final File file;
     private final YamlConfiguration data;
 
-    private static final long TWO_HOURS_MS = 2L * 60L * 60L * 1000L;
+    // 30 минут в миллисекундах
+    private static final long ASK_INTERVAL_MS = 30L * 60L * 1000L;
 
     public enum OsType {
         WINDOWS("Windows", "&#00E5FFWindows", Material.LIGHT_BLUE_STAINED_GLASS),
@@ -89,14 +89,15 @@ public class OsManager implements Listener {
         long now = System.currentTimeMillis();
 
         boolean ipChanged = !savedIp.equals(currentIp);
-        boolean twoHoursPassed = (now - lastAsk) >= TWO_HOURS_MS;
+        boolean intervalPassed = (now - lastAsk) >= ASK_INTERVAL_MS;
+        boolean notChosen = getPlayerOs(p.getName()) == OsType.UNKNOWN;
 
-        if (ipChanged || twoHoursPassed || !data.contains(key + ".os")) {
+        if (ipChanged || intervalPassed || notChosen) {
             Bukkit.getScheduler().runTaskLater(plugin, () -> {
                 if (p.isOnline() && !plugin.getCheckManager().isInCheck(p.getUniqueId())) {
                     openOsMenu(p);
                 }
-            }, 30L);
+            }, 25L);
         }
     }
 
