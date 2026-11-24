@@ -43,6 +43,7 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
     private ModPanel modPanel;
     private CheckManager checkManager;
     private ChatFilter chatFilter;
+    private OsManager osManager;
 
     @Override
     public void onEnable() {
@@ -57,11 +58,12 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         this.modPanel = new ModPanel(this);
         this.checkManager = new CheckManager(this);
         this.chatFilter = new ChatFilter(this);
+        this.osManager = new OsManager(this);
 
         TabHelper tabHelper = new TabHelper(this);
         List<String> commands = List.of(
                 "punish", "check", "checktime", "report",
-                "reports", "spec", "ban", "mute", "unban", "unmute", "acreport"
+                "reports", "spec", "ban", "mute", "unban", "unmute", "acreport", "os"
         );
         for (String cmd : commands) {
             if (getCommand(cmd) != null) {
@@ -74,13 +76,15 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         Bukkit.getPluginManager().registerEvents(modPanel, this);
         Bukkit.getPluginManager().registerEvents(checkManager, this);
         Bukkit.getPluginManager().registerEvents(chatFilter, this);
+        Bukkit.getPluginManager().registerEvents(osManager, this);
 
-        getLogger().info("MirTimePunish v2.0.0 (Синхронизация с MT-AC v3.0 + Защита проверок) запущен!");
+        getLogger().info("MirTimePunish v2.1.0 (MT-AC вкладки + Фильтр по статьям + Опрос ОС) запущен!");
     }
 
     public ModPanel getModPanel() { return modPanel; }
     public CheckManager getCheckManager() { return checkManager; }
     public ChatFilter getChatFilter() { return chatFilter; }
+    public OsManager getOsManager() { return osManager; }
 
     private void saveDb() {
         try { db.save(dbFile); } catch (IOException e) { e.printStackTrace(); }
@@ -105,6 +109,11 @@ public class MirTimePunish extends JavaPlugin implements CommandExecutor, Listen
         String name = command.getName().toLowerCase();
         String arg0 = args.length > 0 ? args[0] : "";
         String arg1 = args.length > 1 ? args[1] : "";
+
+        if (name.equals("os")) {
+            if (sender instanceof Player p) osManager.openOsMenu(p);
+            return true;
+        }
 
         if (name.equals("acreport")) {
             if (args.length >= 2) {
