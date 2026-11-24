@@ -13,6 +13,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
@@ -26,7 +27,39 @@ public class ModPanel implements Listener {
     private final List<ReportEntry> reports = new ArrayList<>();
     private final Map<UUID, Location> specReturnLoc = new HashMap<>();
     private final Map<UUID, GameMode> specReturnMode = new HashMap<>();
-    private final Map<Integer, ReportEntry> slotMap = new HashMap<>();
+    private final Map<UUID, Map<Integer, ReportEntry>> playerSlotMaps = new HashMap<>();
+
+    private final Map<UUID, Boolean> viewingAntiCheatTab = new HashMap<>();
+    private final Map<UUID, OsFilter> osFilters = new HashMap<>();
+
+    public enum OsFilter {
+        ALL("Все ОС", "&#00E5FFВсе ОС"),
+        WINDOWS("Windows", "&#00E5FFWindows"),
+        LINUX("Linux", "&#00FF66Linux"),
+        OTHER("Другие", "&eДругие");
+
+        public final String label;
+        public final String colored;
+
+        OsFilter(String label, String colored) {
+            this.label = label;
+            this.colored = colored;
+        }
+
+        public OsFilter next() {
+            return switch (this) {
+                case ALL -> WINDOWS;
+                case WINDOWS -> LINUX;
+                case LINUX -> OTHER;
+                case OTHER -> ALL;
+            };
+        }
+    }
+    public static class PanelHolder implements InventoryHolder {
+        private Inventory inv;
+        @Override public Inventory getInventory() { return inv; }
+        public void setInventory(Inventory inv) { this.inv = inv; }
+    }
 
     public static class ReportEntry {
         public final String sender;
@@ -116,37 +149,48 @@ public class ModPanel implements Listener {
         mod.teleport(target.getLocation());
         mod.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &fВы следите за &#00FF66" + target.getName() + "&f. Чтобы вернуться: &#00E5FF/spec"));
     }
-
     public void openReportsMenu(Player mod) {
-        Inventory inv = Bukkit.createInventory(null, 54, MirTimePunish.color("&#0055ff&l⚡ Панель модерации &8(&fЖалоб: &#00FF66" + reports.size() + "&8)"));
+        boolean isAcTab = viewingAntiCheatTab.getOrDefault(mod.getUniqueId(), false);
+        OsFilter currentFilter = osFilters.getOrDefault(mod.getUniqueId(), OsFilter.ALL);
 
-        ItemStack blue = new ItemStack(Material.BLUE_STAINED_GLASS_PANE);
-        ItemMeta bMeta = blue.getItemMeta();
-        if (bMeta != null) {
-            bMeta.setDisplayName(MirTimePunish.color("&#0055ff▪"));
-            blue.setItemMeta(bMeta);
-        }
+        long playerReportsCount = reports.stream().filter(r -> !r.isAntiCheat).count();
+        long acReportsCount = reports.stream().filter(r -> r.isAntiCheat).count();
 
-        int[] border = {0, 1, 2, 3, 5, 6, 7, 9, 17, 18, 26, 27, 35, 36, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53};
+        String tabTitle = isAcTab ? "&#FF2A55Античит MT-AC" : "&#00FF66Жалобы игроков";
+        PanelHolder holder = new PanelHolder();
+        Inventory inv = Bukkit.createInventory(holder, 54, MirTimePunish.color("&#0055ff&l⚡ Репорты &8| " + tabTitle));
+        holder.setInventory(inv);
+
+        ItemStack blue = simpleItem(Material.BLUE_STAINED_GLASS_PANE, "&#0055ff▪", null);
+        int[] border = {0, 1, 5, 7, 9, 17, 18, 26, 27, 35, 36, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53};
         for (int s : border) inv.setItem(s, blue);
 
-        ItemStack exitSpec = new ItemStack(Material.ENDER_EYE);
-        ItemMeta eMeta = exitSpec.getItemMeta();
-        if (eMeta != null) {
-            eMeta.setDisplayName(MirTimePunish.color("&#00E5FF&l[👁] Выйти из слежки (/spec)"));
-            exitSpec.setItemMeta(eMeta);
-        }
-        inv.setItem(4, exitSpec);
+        inv.setItem(2, simpleItem(
+                !isAcTab ? Material.LIME_DYE : Material.GRAY_DYE,
+                (!isAcTab ? "&#00FF66&l[✔] Жалобы от игроков" : "&7[ ] Жалобы от игроков") + " &8(&f" + playerReportsCount + "&8)",
+                List.of("&7Нажмите, чтобы открыть жалобы,", "&7отправленные игроками через /report.")
+        ));
 
-        ItemStack clearAll = new ItemStack(Material.BARRIER);
-        ItemMeta cMeta = clearAll.getItemMeta();
-        if (cMeta != null) {
-            cMeta.setDisplayName(MirTimePunish.color("&c&l[✖] Очистить все жалобы"));
-            clearAll.setItemMeta(cMeta);
-        }
-        inv.setItem(8, clearAll);
+        inv.setItem(3, simpleItem(
+                isAcTab ? Material.REDSTONE : Material.GUNPOWDER,
+                (isAcTab ? "&#FF2A55&l[✔] Детекты MT-AC" : "&7[ ] Детекты MT-AC") + " &8(&f" + acReportsCount + "&8)",
+                List.of("&7Нажмите, чтобы открыть срабатывания", "&7самописного античита MT-AC v3.0.")
+        ));
 
-        slotMap.clear();
+        inv.setItem(4, simpleItem(Material.ENDER_EYE, "&#00E5FF&l[👁] Выйти из слежки (/spec)", null));
+
+        inv.setItem(6, simpleItem(Material.COMPASS, "&#0055ff&l[💻] Фильтр по ОС: " + currentFilter.colored, List.of(
+                "&7Текущий фильтр: " + currentFilter.colored,
+                "",
+                "&#00FF66➥ Нажмите&f, чтобы переключить:",
+                "&7Все ОС ➔ Windows ➔ Linux ➔ Другие"
+        )));
+
+        inv.setItem(8, simpleItem(Material.BARRIER, "&c&l[✖] Очистить текущую вкладку", List.of("&7Удалить все записи из открытой вкладки.")));
+
+        Map<Integer, ReportEntry> slotMap = new HashMap<>();
+        playerSlotMaps.put(mod.getUniqueId(), slotMap);
+
         int[] slots = {
                 10, 11, 12, 13, 14, 15, 16,
                 19, 20, 21, 22, 23, 24, 25,
@@ -154,9 +198,24 @@ public class ModPanel implements Listener {
                 37, 38, 39, 40, 41, 42, 43
         };
 
-        int limit = Math.min(reports.size(), slots.length);
+        List<ReportEntry> filtered = new ArrayList<>();
+        for (ReportEntry r : reports) {
+            if (r.isAntiCheat != isAcTab) continue;
+            OsManager.OsType targetOs = plugin.getOsManager().getPlayerOs(r.target);
+            boolean matchesOs = switch (currentFilter) {
+                case ALL -> true;
+                case WINDOWS -> targetOs == OsManager.OsType.WINDOWS;
+                case LINUX -> targetOs == OsManager.OsType.LINUX;
+                case OTHER -> targetOs == OsManager.OsType.OTHER || targetOs == OsManager.OsType.UNKNOWN;
+            };
+            if (matchesOs) filtered.add(r);
+        }
+
+        int limit = Math.min(filtered.size(), slots.length);
         for (int i = 0; i < limit; i++) {
-            ReportEntry r = reports.get(i);
+            ReportEntry r = filtered.get(i);
+            OsManager.OsType targetOs = plugin.getOsManager().getPlayerOs(r.target);
+
             ItemStack head = new ItemStack(Material.PLAYER_HEAD);
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             if (meta != null) {
@@ -166,10 +225,11 @@ public class ModPanel implements Listener {
                 meta.setLore(List.of(
                         MirTimePunish.color("&#0055ff● &fИсточник: &#00E5FF" + r.sender),
                         MirTimePunish.color("&#0055ff● &fПричина: &e" + r.reason),
+                        MirTimePunish.color("&#0055ff● &fОС игрока: " + targetOs.coloredName),
                         "",
                         MirTimePunish.color("&#00FF66[ЛКМ] &fТелепорт и скрытая слежка (/spec)"),
                         MirTimePunish.color("&#00E5FF[ПКМ] &fВызвать на проверку читов (/check)"),
-                        MirTimePunish.color("&c[ШИФТ+ПКМ] &fЗакрыть и удалить жалобу")
+                        MirTimePunish.color("&c[ШИФТ+ПКМ] &fЗакрыть и удалить запись")
                 ));
                 head.setItemMeta(meta);
             }
@@ -179,27 +239,51 @@ public class ModPanel implements Listener {
 
         mod.openInventory(inv);
     }
-
     @EventHandler
     public void onPanelClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)) return;
-        if (!e.getView().getTitle().contains("Панель модерации")) return;
+        if (!(e.getView().getTopInventory().getHolder() instanceof PanelHolder)) return;
 
         e.setCancelled(true);
-        int slot = e.getRawSlot();
+        if (e.getClickedInventory() != e.getView().getTopInventory()) return;
 
+        int slot = e.getRawSlot();
+        UUID id = p.getUniqueId();
+        boolean isAcTab = viewingAntiCheatTab.getOrDefault(id, false);
+
+        if (slot == 2) {
+            viewingAntiCheatTab.put(id, false);
+            p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.2f);
+            openReportsMenu(p);
+            return;
+        }
+        if (slot == 3) {
+            viewingAntiCheatTab.put(id, true);
+            p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.2f);
+            openReportsMenu(p);
+            return;
+        }
         if (slot == 4) {
             p.closeInventory();
             toggleSpec(p, null);
             return;
         }
+        if (slot == 6) {
+            OsFilter next = osFilters.getOrDefault(id, OsFilter.ALL).next();
+            osFilters.put(id, next);
+            p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1.0f, 1.3f);
+            openReportsMenu(p);
+            return;
+        }
         if (slot == 8) {
-            reports.clear();
+            reports.removeIf(r -> r.isAntiCheat == isAcTab);
             p.playSound(p.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
             openReportsMenu(p);
             return;
         }
 
+        Map<Integer, ReportEntry> slotMap = playerSlotMaps.get(id);
+        if (slotMap == null) return;
         ReportEntry r = slotMap.get(slot);
         if (r == null) return;
 
@@ -215,5 +299,16 @@ public class ModPanel implements Listener {
             p.closeInventory();
             Bukkit.dispatchCommand(p, "check " + r.target);
         }
+    }
+
+    private ItemStack simpleItem(Material mat, String name, List<String> lore) {
+        ItemStack is = new ItemStack(mat);
+        ItemMeta meta = is.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(MirTimePunish.color(name));
+            if (lore != null) meta.setLore(lore.stream().map(MirTimePunish::color).toList());
+            is.setItemMeta(meta);
+        }
+        return is;
     }
 }
