@@ -8,26 +8,52 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerCommandPreprocessEvent;
-import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
 
 public class ChatFilter implements Listener {
 
     private final MirTimePunish plugin;
-    private final Map<UUID, WarnData> warnings = new ConcurrentHashMap<>();
+    private final Map<UUID, Integer> warnings = new HashMap<>();
 
-    private static class WarnData {
-        int count;
-        long lastWarnTime;
+    // Паттерн ссылок и сторонних IP (Статья 3.8)
+    private static final Pattern LINK_PATTERN = Pattern.compile(
+            "(?i)(https?://|www\\.|[a-z0-9-]+\\.(ru|com|net|org|su|fun|gg|me|xyz|pro|tk|ml|ga|cf|gq)|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}(:\\d{1,5})?)"
+    );
 
-        WarnData(int count, long lastWarnTime) {
-            this.count = count;
-            this.lastWarnTime = lastWarnTime;
-        }
-    }
+    // Статья 3.1: Прямое оскорбление родных (тяжёлое нарушение -> сразу 3/3 предупреждения = мут 7д)
+    private static final List<String> ART_3_1_WORDS = List.of(
+            "мать ебал", "мамку ебал", "мать шлюха", "мать сдохла", "сын шлюхи", "сын бляди",
+            "ебал твою мать", "ебал твою маму", "мать твоя", "отца ебал", "батю ебал"
+    );
+
+    // Статья 3.2: Завуалированное упоминание / неуважение к родным (+2 предупреждения)
+    private static final List<String> ART_3_2_WORDS = List.of(
+            "mq", "мкью", "мамке привет", "маме привет", "твоей мамке", "твоей маме", "без мамный", "безмамный", "детдомовец"
+    );
+
+    // Статья 3.3: Деанон / угрозы слива личных данных (сразу 3/3 -> бан навсегда или строгий блок)
+    private static final List<String> ART_3_3_WORDS = List.of(
+            "сватну", "сватнуть", "деанон", "доксну", "сливаю адрес", "пробью по ip", "найду по айпи"
+    );
+
+    // Статья 3.4: Пожелания смерти (+2 предупреждения)
+    private static final List<String> ART_3_4_WORDS = List.of(
+            "сдохни", "умри", "вскройся", "повесься", "чтоб ты сдох", "убейся"
+    );
+
+    // Статья 3.5: Розжиг / нацизм (+2 предупреждения)
+    private static final List<String> ART_3_5_WORDS = List.of(
+            "зиг хайль", "хайль гитлер", "чурка", "хач", "ниггер", "хохол", "кацап"
+    );
+
+    // Статья 3.7: Чрезмерный мат и оскорбления в глобальном чате (+1 предупреждение, 3 пред. = мут 15м)
+    private static final List<String> ART_3_7_WORDS = List.of(
+            "бля", "блять", "сука", "хуй", "хуйня", "пизда", "пиздец", "ебать", "ебаный",
+            "нахуй", "похуй", "долбоеб", "долбаеб", "уебок", "пидор", "пидорас", "гандон", "мудак", "шлюха"
+    );
 
     public ChatFilter(MirTimePunish plugin) {
         this.plugin = plugin;
@@ -37,197 +63,109 @@ public class ChatFilter implements Listener {
         warnings.remove(uuid);
     }
 
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onChat(AsyncChatEvent e) {
-        Player p = e.getPlayer();
-        if (shouldBypass(p)) return;
-
-        String rawMessage = PlainTextComponentSerializer.plainText().serialize(e.message());
-        String matchedWord = findMatchedWord(rawMessage);
-
-        if (matchedWord != null) {
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    public void onPaperChat(AsyncChatEvent e) {
+        String plain = PlainTextComponentSerializer.plainText().serialize(e.message());
+        if (checkAndPunish(e.getPlayer(), plain)) {
             e.setCancelled(true);
-            handleViolation(p, rawMessage, matchedWord, false);
         }
     }
 
-    @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
-    public void onPrivateCommand(PlayerCommandPreprocessEvent e) {
-        if (!plugin.getConfig().getBoolean("chat-filter.check-private-commands", true)) return;
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    public void onLegacyChat(AsyncPlayerChatEvent e) {
+        if (checkAndPunish(e.getPlayer(), e.getMessage())) {
+            e.setCancelled(true);
+        }
+    }
 
-        Player p = e.getPlayer();
-        if (shouldBypass(p)) return;
+    private boolean checkAndPunish(Player p, String rawMessage) {
+        if (p.hasPermission("mirtime.punish.filter.bypass")) return false;
+        if (plugin.getCheckManager() != null && plugin.getCheckManager().isInCheck(p.getUniqueId())) return false;
 
-        String msg = e.getMessage();
-        String lower = msg.toLowerCase(Locale.ROOT);
-        if (lower.startsWith("/msg ") || lower.startsWith("/m ") || lower.startsWith("/tell ")
-                || lower.startsWith("/w ") || lower.startsWith("/r ")) {
-            int firstSpace = msg.indexOf(' ');
-            if (firstSpace == -1 || firstSpace + 1 >= msg.length()) return;
+        String lower = rawMessage.toLowerCase().trim();
+        // Нормализация обходов вида "с.у.к.а" или "б л я"
+        String normalized = lower.replaceAll("[^а-яa-z0-9\\s]", "");
 
-            String content = msg.substring(firstSpace + 1);
-            String matchedWord = findMatchedWord(content);
-            if (matchedWord != null) {
-                e.setCancelled(true);
-                handleViolation(p, msg, matchedWord, true);
+        // 1. Проверка рекламы (Статья 3.8) — разрешаем только официальные домены проекта
+        if (LINK_PATTERN.matcher(lower).find()) {
+            boolean isOfficial = lower.contains("mir-time.ru") || lower.contains("://vk.com") || lower.contains("max.ru/se15118439");
+            if (!isOfficial) {
+                handleViolation(p, 3, "Пункт 3.8 - Реклама сторонних ресурсов", "12h", false);
+                return true;
             }
         }
+
+        // 2. Статья 3.3 (Деанон / угрозы) -> мгновенно 3/3 (Бан навсегда)
+        if (containsAny(lower, normalized, ART_3_3_WORDS)) {
+            handleViolation(p, 3, "Пункт 3.3 - Угрозы расправой, деанон и слив данных", "perm", true);
+            return true;
+        }
+
+        // 3. Статья 3.1 (Прямое оск. родных) -> мгновенно 3/3 (Мут 7 дней)
+        if (containsAny(lower, normalized, ART_3_1_WORDS)) {
+            handleViolation(p, 3, "Пункт 3.1 - Прямое оскорбление родителей и родных", "7d", false);
+            return true;
+        }
+
+        // 4. Статья 3.2 (Завуал. упом. родных) -> +2 предупреждения (Мут 2 дня)
+        if (containsAny(lower, normalized, ART_3_2_WORDS)) {
+            handleViolation(p, 2, "Пункт 3.2 - Упоминание и завуалированное оск. родных", "2d", false);
+            return true;
+        }
+
+        // 5. Статья 3.4 (Пожелания смерти) -> +2 предупреждения (Мут 3 часа)
+        if (containsAny(lower, normalized, ART_3_4_WORDS)) {
+            handleViolation(p, 2, "Пункт 3.4 - Пожелания смерти и жёсткая травля", "3h", false);
+            return true;
+        }
+
+        // 6. Статья 3.5 (Розжиг) -> +2 предупреждения (Мут 3 часа)
+        if (containsAny(lower, normalized, ART_3_5_WORDS)) {
+            handleViolation(p, 2, "Пункт 3.5 - Разжигание межнациональной и политической розни", "3h", false);
+            return true;
+        }
+
+        // 7. Статья 3.7 (Мат и оскорбления) -> +1 предупреждение (на 3/3 Мут 15 минут)
+        if (containsAny(lower, normalized, ART_3_7_WORDS)) {
+            handleViolation(p, 1, "Пункт 3.7 - Чрезмерная нецензурная лексика в глобальном чате", "15m", false);
+            return true;
+        }
+
+        // 8. Статья 3.6 (Злоупотребление КАПСОМ: длиннее 8 символов и >75% заглавных букв)
+        if (rawMessage.length() >= 8) {
+            long upper = rawMessage.chars().filter(Character::isUpperCase).count();
+            long letters = rawMessage.chars().filter(Character::isLetter).count();
+            if (letters >= 6 && ((double) upper / letters) >= 0.75) {
+                handleViolation(p, 1, "Пункт 3.6 - Спам, флуд и злоупотребление капсом", "15m", false);
+                return true;
+            }
+        }
+
+        return false;
     }
 
-    @EventHandler
-    public void onQuit(PlayerQuitEvent e) {
-        // Очищаем просроченные записи при выходе игрока
-        UUID id = e.getPlayer().getUniqueId();
-        WarnData data = warnings.get(id);
-        if (data != null && isExpired(data.lastWarnTime)) {
+    private boolean containsAny(String lower, String normalized, List<String> list) {
+        for (String w : list) {
+            if (lower.contains(w) || normalized.contains(w)) return true;
+        }
+        return false;
+    }
+
+    private void handleViolation(Player p, int weight, String articleReason, String durationStr, boolean isBan) {
+        UUID id = p.getUniqueId();
+        int current = warnings.getOrDefault(id, 0) + weight;
+
+        if (current >= 3) {
             warnings.remove(id);
-        }
-    }
-
-    private boolean shouldBypass(Player p) {
-        if (!plugin.getConfig().getBoolean("chat-filter.enabled", true)) return true;
-        if (p.hasPermission("mirtime.punish.filter.bypass") || p.hasPermission("mirtime.punish.bypass")) return true;
-        return plugin.getCheckManager() != null && plugin.getCheckManager().isInCheck(p.getUniqueId());
-    }
-
-    private boolean isExpired(long lastTime) {
-        long expireMinutes = plugin.getConfig().getLong("chat-filter.warn-expire-minutes", 10L);
-        return expireMinutes > 0 && (System.currentTimeMillis() - lastTime) > (expireMinutes * 60_000L);
-    }
-
-    private void handleViolation(Player p, String originalMessage, String matchedWord, boolean isPrivateCmd) {
-        UUID uuid = p.getUniqueId();
-        long now = System.currentTimeMillis();
-
-        int maxWarns = plugin.getConfig().getInt("chat-filter.max-warnings", 3);
-        WarnData data = warnings.get(uuid);
-
-        int currentWarns;
-        if (data == null || isExpired(data.lastWarnTime)) {
-            currentWarns = 1;
+            long durMs = plugin.parseDuration(durationStr);
+            Bukkit.getScheduler().runTask(plugin, () ->
+                    plugin.applyPunishment(Bukkit.getConsoleSender(), p.getName(), isBan, durMs, articleReason)
+            );
         } else {
-            currentWarns = data.count + 1;
+            warnings.put(id, current);
+            p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.8f);
+            p.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lАВТО-ФИЛЬТР &8» &cСообщение заблокировано! &8(&eПредупреждение " + current + "/3&8)"));
+            p.sendMessage(MirTimePunish.color(" &#0055ff● &fНарушение: &#00E5FF" + articleReason + " &7(на 3/3 — автоматическое наказание)"));
         }
-
-        if (currentWarns >= maxWarns) {
-            warnings.remove(uuid);
-            String durationStr = plugin.getConfig().getString("chat-filter.mute-duration", "15m");
-            String reason = plugin.getConfig().getString("chat-filter.mute-reason", "Пункт 3.7 - Чрезмерная нецензурная лексика (Авто-фильтр)");
-            long durationMs = plugin.parseDuration(durationStr);
-
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                notifyStaff(p, originalMessage, matchedWord, maxWarns, maxWarns, true);
-                p.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cВы набрали &#00FF66[" + maxWarns + "/" + maxWarns + "] &cпредупреждений фильтра и получили авто-мут!"));
-                plugin.applyPunishment(Bukkit.getConsoleSender(), p.getName(), false, durationMs, reason);
-            });
-        } else {
-            warnings.put(uuid, new WarnData(currentWarns, now));
-            String chatType = isPrivateCmd ? "в личных сообщениях" : "в чате";
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                notifyStaff(p, originalMessage, matchedWord, currentWarns, maxWarns, false);
-                p.sendMessage(MirTimePunish.color("&#0055ff&l⚡ &#00E5FF&lMIR-TIME &8» &cСообщение " + chatType + " заблокировано фильтром! Предупреждение: &#00FF66[" + currentWarns + "/" + maxWarns + "]"));
-                p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BASS, 1.0f, 0.8f);
-            });
-        }
-    }
-
-    private void notifyStaff(Player offender, String message, String matchedWord, int warns, int maxWarns, boolean muted) {
-        if (!plugin.getConfig().getBoolean("chat-filter.notify-staff", true)) return;
-
-        String status = muted ? "&c[АВТО-МУТ]" : "&e[" + warns + "/" + maxWarns + "]";
-        String alert = MirTimePunish.color(
-                "&#0055ff&l[Фильтр] " + status + " &f" + offender.getName()
-                        + " &8(&7слово: &c" + matchedWord + "&8) &7» &f" + message
-        );
-
-        for (Player staff : Bukkit.getOnlinePlayers()) {
-            if (staff.hasPermission("mirtime.punish.reports")) {
-                staff.sendMessage(alert);
-            }
-        }
-    }
-
-    private String findMatchedWord(String message) {
-        List<String> badWords = plugin.getConfig().getStringList("chat-filter.words");
-        if (badWords.isEmpty()) return null;
-
-        List<String> whitelist = plugin.getConfig().getStringList("chat-filter.whitelist");
-        boolean smart = plugin.getConfig().getBoolean("chat-filter.smart-normalize", true);
-
-        String lower = message.toLowerCase(Locale.ROOT);
-        for (String safe : whitelist) {
-            if (!safe.isEmpty()) {
-                lower = lower.replace(safe.toLowerCase(Locale.ROOT), " ");
-            }
-        }
-
-        String normalized = smart ? normalizeText(lower) : lower;
-        String compact = normalized.replaceAll("[^а-яёa-z0-9]", "");
-        String collapsed = collapseRepeats(compact);
-
-        for (String rawBad : badWords) {
-            if (rawBad == null || rawBad.isBlank()) continue;
-
-            String cleanBad = smart ? normalizeText(rawBad.toLowerCase(Locale.ROOT)) : rawBad.toLowerCase(Locale.ROOT);
-            String compactBad = cleanBad.replaceAll("[^а-яёa-z0-9]", "");
-            String collapsedBad = collapseRepeats(compactBad);
-
-            if (normalized.contains(cleanBad)
-                    || (!compactBad.isEmpty() && compact.contains(compactBad))
-                    || (!collapsedBad.isEmpty() && collapsed.contains(collapsedBad))) {
-                return rawBad;
-            }
-        }
-        return null;
-    }
-
-    private String normalizeText(String text) {
-        return text
-                .replace('a', 'а')
-                .replace('@', 'а')
-                .replace('b', 'б')
-                .replace('6', 'б')
-                .replace('v', 'в')
-                .replace('w', 'ш')
-                .replace('g', 'г')
-                .replace('d', 'д')
-                .replace('e', 'е')
-                .replace('ё', 'е')
-                .replace('3', 'з')
-                .replace('z', 'з')
-                .replace('u', 'у')
-                .replace('y', 'у')
-                .replace('i', 'и')
-                .replace('1', 'и')
-                .replace('k', 'к')
-                .replace('l', 'л')
-                .replace('m', 'м')
-                .replace('n', 'н')
-                .replace('h', 'н')
-                .replace('o', 'о')
-                .replace('0', 'о')
-                .replace('p', 'р')
-                .replace('r', 'р')
-                .replace('c', 'с')
-                .replace('s', 'с')
-                .replace('$', 'с')
-                .replace('t', 'т')
-                .replace('f', 'ф')
-                .replace('x', 'х')
-                .replace('4', 'ч');
-    }
-
-    private String collapseRepeats(String input) {
-        if (input.length() < 2) return input;
-        StringBuilder sb = new StringBuilder(input.length());
-        char prev = 0;
-        for (int i = 0; i < input.length(); i++) {
-            char cur = input.charAt(i);
-            if (cur != prev) {
-                sb.append(cur);
-                prev = cur;
-            }
-        }
-        return sb.toString();
     }
 }
