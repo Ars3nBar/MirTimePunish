@@ -1,5 +1,5 @@
 name: MirTimePunish
-version: '2.0.0'
+version: '2.1.0'
 main: ru.mirtime.punish.MirTimePunish
 api-version: '1.21'
 softdepend:
@@ -46,6 +46,9 @@ commands:
   acreport:
     description: Системный приём репортов от античита MT-AC
     permission: mirtime.punish.acreport
+  os:
+    description: Выбрать платформу и ОС для статистики
+    aliases: [platform, ос]
 
 permissions:
   mirtime.punish.*:
