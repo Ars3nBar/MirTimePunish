@@ -24,33 +24,27 @@ public class ChatFilter implements Listener {
             "(?i)(https?://|www\\.|[a-z0-9-]+\\.(ru|com|net|org|su|fun|gg|me|xyz|pro|tk|ml|ga|cf|gq)|\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}(:\\d{1,5})?)"
     );
 
-    // Пункт 3.1: Прямое оскорбление родных -> на 3/3 Жёсткий мут на 7 дней
     private static final List<String> ART_3_1_WORDS = List.of(
             "мать ебал", "мамку ебал", "мать шлюха", "мать сдохла", "сын шлюхи", "сын бляди",
             "ебал твою мать", "ебал твою маму", "мать твоя", "отца ебал", "батю ебал"
     );
 
-    // Пункт 3.2: Завуалированное упоминание родных -> на 3/3 Мут на 2 дня
     private static final List<String> ART_3_2_WORDS = List.of(
             "mq", "мкью", "мамке привет", "маме привет", "твоей мамке", "твоей маме", "без мамный", "безмамный", "детдомовец"
     );
 
-    // Пункт 3.3: Деанон / сват / угрозы -> на 3/3 Жёсткий бан на 14 дней
     private static final List<String> ART_3_3_WORDS = List.of(
             "сватну", "сватнуть", "деанон", "доксну", "сливаю адрес", "пробью по ip", "найду по айпи"
     );
 
-    // Пункт 3.4: Пожелания смерти -> на 3/3 Мут на 12 часов
     private static final List<String> ART_3_4_WORDS = List.of(
             "сдохни", "умри", "вскройся", "повесься", "чтоб ты сдох", "убейся"
     );
 
-    // Пункт 3.5: Розжиг / нацизм -> на 3/3 Мут на 12 часов
     private static final List<String> ART_3_5_WORDS = List.of(
             "зиг хайль", "хайль гитлер", "чурка", "хач", "ниггер", "хохол", "кацап"
     );
 
-    // Пункт 3.7: Мат и оскорбления -> на 3/3 Мут на 1 час
     private static final List<String> ART_3_7_WORDS = List.of(
             "бля", "блять", "сука", "хуй", "хуйня", "пизда", "пиздец", "ебать", "ебаный",
             "нахуй", "похуй", "долбоеб", "долбаеб", "уебок", "пидор", "пидорас", "гандон", "мудак", "шлюха"
@@ -94,9 +88,12 @@ public class ChatFilter implements Listener {
         String lower = rawMessage.toLowerCase().trim();
         String normalized = lower.replaceAll("[^а-яa-z0-9\\s]", "");
 
-        // 1. Реклама сторонних ресурсов (Пункт 3.8) -> 3 пред., затем Бан на 7 дней
+        // 1. Реклама сторонних ресурсов (Пункт 3.8) — разрешаем официальные соцсети Mir-Time
         if (LINK_PATTERN.matcher(lower).find()) {
-            boolean isOfficial = lower.contains("mir-time.ru") || lower.contains("://vk.com") || lower.contains("max.ru/se15118439");
+            boolean isOfficial = lower.contains("mir-time.ru")
+                    || lower.contains("club241998844")
+                    || lower.contains("t.me/mirtime_minecraft")
+                    || lower.contains("discord.gg/4c2ag4cwqu");
             if (!isOfficial) {
                 lastCheckTime.put(p.getUniqueId(), now);
                 handleViolation(p, "Пункт 3.8 - Реклама сторонних ресурсов", "7d", true, "Бан на 7 дней");
@@ -104,49 +101,42 @@ public class ChatFilter implements Listener {
             }
         }
 
-        // 2. Деанон и угрозы (Пункт 3.3) -> 3 пред., затем Бан на 14 дней
         if (containsAny(lower, normalized, ART_3_3_WORDS)) {
             lastCheckTime.put(p.getUniqueId(), now);
             handleViolation(p, "Пункт 3.3 - Угрозы расправой, деанон и слив данных", "14d", true, "Бан на 14 дней");
             return true;
         }
 
-        // 3. Прямое оск. родных (Пункт 3.1) -> 3 пред., затем Мут на 7 дней
         if (containsAny(lower, normalized, ART_3_1_WORDS)) {
             lastCheckTime.put(p.getUniqueId(), now);
             handleViolation(p, "Пункт 3.1 - Прямое оскорбление родителей и родных", "7d", false, "Мут на 7 дней");
             return true;
         }
 
-        // 4. Завуалированное упом. родных (Пункт 3.2) -> 3 пред., затем Мут на 2 дня
         if (containsAny(lower, normalized, ART_3_2_WORDS)) {
             lastCheckTime.put(p.getUniqueId(), now);
             handleViolation(p, "Пункт 3.2 - Упоминание и завуалированное оск. родных", "2d", false, "Мут на 2 дня");
             return true;
         }
 
-        // 5. Пожелания смерти (Пункт 3.4) -> 3 пред., затем Мут на 12 часов
         if (containsAny(lower, normalized, ART_3_4_WORDS)) {
             lastCheckTime.put(p.getUniqueId(), now);
             handleViolation(p, "Пункт 3.4 - Пожелания смерти и жёсткая травля", "12h", false, "Мут на 12 часов");
             return true;
         }
 
-        // 6. Розжиг (Пункт 3.5) -> 3 пред., затем Мут на 12 часов
         if (containsAny(lower, normalized, ART_3_5_WORDS)) {
             lastCheckTime.put(p.getUniqueId(), now);
             handleViolation(p, "Пункт 3.5 - Разжигание межнациональной и политической розни", "12h", false, "Мут на 12 часов");
             return true;
         }
 
-        // 7. Мат и оскорбления (Пункт 3.7) -> 3 пред., затем Мут на 1 час
         if (containsAny(lower, normalized, ART_3_7_WORDS)) {
             lastCheckTime.put(p.getUniqueId(), now);
             handleViolation(p, "Пункт 3.7 - Чрезмерная нецензурная лексика в глобальном чате", "1h", false, "Мут на 1 час");
             return true;
         }
 
-        // 8. КАПС (Пункт 3.6) -> 3 пред., затем Мут на 1 час
         if (rawMessage.length() >= 8) {
             long upper = rawMessage.chars().filter(Character::isUpperCase).count();
             long letters = rawMessage.chars().filter(Character::isLetter).count();
