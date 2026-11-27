@@ -55,6 +55,7 @@ public class ModPanel implements Listener {
             };
         }
     }
+
     public static class PanelHolder implements InventoryHolder {
         private Inventory inv;
         @Override public Inventory getInventory() { return inv; }
@@ -113,7 +114,7 @@ public class ModPanel implements Listener {
         ReportEntry entry = new ReportEntry(source, targetName, reason, true);
         reports.add(entry);
 
-        TextComponent msg = new TextComponent(MirTimePunish.color("&#FF2A55&l[MT-AC] &#00E5FFДетект: &f" + targetName + " &7➔ &c" + reason + " "));
+        TextComponent msg = new TextComponent(MirTimePunish.color("&#FF2A55&l[MT-AI] &#00E5FFДетект: &f" + targetName + " &7➔ &c" + reason + " "));
         TextComponent btn = new TextComponent(MirTimePunish.color("&#00FF66&l[ПАНЕЛЬ /REPORTS]"));
         btn.setClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/reports"));
         msg.addExtra(btn);
@@ -156,7 +157,7 @@ public class ModPanel implements Listener {
         long playerReportsCount = reports.stream().filter(r -> !r.isAntiCheat).count();
         long acReportsCount = reports.stream().filter(r -> r.isAntiCheat).count();
 
-        String tabTitle = isAcTab ? "&#FF2A55Античит MT-AC" : "&#00FF66Жалобы игроков";
+        String tabTitle = isAcTab ? "&#FF2A55Нейросеть MT-AI" : "&#00FF66Жалобы игроков";
         PanelHolder holder = new PanelHolder();
         Inventory inv = Bukkit.createInventory(holder, 54, MirTimePunish.color("&#0055ff&l⚡ Репорты &8| " + tabTitle));
         holder.setInventory(inv);
@@ -173,8 +174,8 @@ public class ModPanel implements Listener {
 
         inv.setItem(3, simpleItem(
                 isAcTab ? Material.REDSTONE : Material.GUNPOWDER,
-                (isAcTab ? "&#FF2A55&l[✔] Детекты MT-AC" : "&7[ ] Детекты MT-AC") + " &8(&f" + acReportsCount + "&8)",
-                List.of("&7Нажмите, чтобы открыть срабатывания", "&7самописного античита MT-AC v3.0.")
+                (isAcTab ? "&#FF2A55&l[✔] Детекты MT-AI v4.0" : "&7[ ] Детекты MT-AI v4.0") + " &8(&f" + acReportsCount + "&8)",
+                List.of("&7Нажмите, чтобы открыть срабатывания", "&7нейро-античита MT-AC v4.0.")
         ));
 
         inv.setItem(4, simpleItem(Material.ENDER_EYE, "&#00E5FF&l[👁] Выйти из слежки (/spec)", null));
@@ -220,17 +221,21 @@ public class ModPanel implements Listener {
             SkullMeta meta = (SkullMeta) head.getItemMeta();
             if (meta != null) {
                 meta.setOwningPlayer(Bukkit.getOfflinePlayer(r.target));
-                String tag = r.isAntiCheat ? "&#FF2A55&l[MT-AC] " : "&c&l[ЖАЛОБА] ";
+                String tag = r.isAntiCheat ? "&#FF2A55&l[MT-AI] " : "&c&l[ЖАЛОБА] ";
                 meta.setDisplayName(MirTimePunish.color(tag + "&f" + r.target + " &8[" + r.time + "]"));
-                meta.setLore(List.of(
+                List<String> lore = new ArrayList<>(List.of(
                         MirTimePunish.color("&#0055ff● &fИсточник: &#00E5FF" + r.sender),
                         MirTimePunish.color("&#0055ff● &fПричина: &e" + r.reason),
                         MirTimePunish.color("&#0055ff● &fОС игрока: " + targetOs.coloredName),
                         "",
                         MirTimePunish.color("&#00FF66[ЛКМ] &fТелепорт и скрытая слежка (/spec)"),
-                        MirTimePunish.color("&#00E5FF[ПКМ] &fВызвать на проверку читов (/check)"),
-                        MirTimePunish.color("&c[ШИФТ+ПКМ] &fЗакрыть и удалить запись")
+                        MirTimePunish.color("&#00E5FF[ПКМ] &fВызвать на проверку читов (/check)")
                 ));
+                if (r.isAntiCheat) {
+                    lore.add(MirTimePunish.color("&#FFD700[ШИФТ+ЛКМ] &fОтменить отложенный ИИ-бан"));
+                }
+                lore.add(MirTimePunish.color("&c[ШИФТ+ПКМ] &fЗакрыть и удалить запись"));
+                meta.setLore(lore);
                 head.setItemMeta(meta);
             }
             inv.setItem(slots[i], head);
@@ -239,6 +244,7 @@ public class ModPanel implements Listener {
 
         mod.openInventory(inv);
     }
+
     @EventHandler
     public void onPanelClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)) return;
@@ -291,6 +297,10 @@ public class ModPanel implements Listener {
         if (click == ClickType.SHIFT_RIGHT) {
             reports.remove(r);
             p.playSound(p.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 1.0f);
+            openReportsMenu(p);
+        } else if (click == ClickType.SHIFT_LEFT && r.isAntiCheat) {
+            reports.remove(r);
+            Bukkit.dispatchCommand(p, "mtac pardon " + r.target);
             openReportsMenu(p);
         } else if (click == ClickType.LEFT) {
             p.closeInventory();
