@@ -1,5 +1,5 @@
 name: MirTimePunish
-version: '2.1.0'
+version: '2.3.0'
 main: ru.mirtime.punish.MirTimePunish
 api-version: '1.21'
 softdepend:
@@ -32,10 +32,18 @@ commands:
     aliases: [слежка]
     permission: mirtime.punish.spec
   ban:
-    description: Забанить игрока
+    description: Забанить игрока (навсегда или по статье)
+    permission: mirtime.punish.ban
+  tempban:
+    description: Временно забанить игрока (по сроку, статье или своей причине)
+    aliases: [tban, временныйбан]
     permission: mirtime.punish.ban
   mute:
-    description: Замутить игрока
+    description: Замутить игрока (навсегда или по статье)
+    permission: mirtime.punish.mute
+  tempmute:
+    description: Временно замутить игрока (по сроку, статье или своей причине)
+    aliases: [tmute, временныймут]
     permission: mirtime.punish.mute
   unban:
     description: Разбанить игрока
